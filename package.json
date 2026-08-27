@@ -1,0 +1,14 @@
+{
+  "name": "imigrasi24jam",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AI-optional conversational immigration service foundation",
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/core/domain-guard.js && node --check src/core/normalization.js && node --check src/core/answer-engine.js && node --check src/core/policy-engine.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
