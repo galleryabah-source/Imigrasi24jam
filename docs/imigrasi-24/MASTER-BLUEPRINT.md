@@ -1,6 +1,6 @@
 # IMIGRASI 24JAM — Master Blueprint
 
-**Status:** Brainstorming Baseline v1.1  
+**Status:** Living Baseline v1.2  
 **Repository:** `galleryabah-source/Imigrasi24jam`  
 **Purpose:** Pedoman induk untuk merancang layanan percakapan keimigrasian 24/7 melalui WhatsApp.
 
@@ -47,21 +47,6 @@ Imigrasi24JAM harus mempunyai **Domain Guard** di depan conversation engine. Dom
 
 Pertanyaan yang tidak berhubungan dengan keimigrasian harus ditolak secara sopan dan diarahkan kembali ke layanan Imigrasi24JAM.
 
-Contoh kategori yang tidak menjadi scope:
-
-- hiburan umum
-- resep/konsultasi non-keimigrasian
-- politik umum
-- pendidikan umum
-- coding/programming
-- investasi/keuangan umum
-- percakapan pribadi
-- general-purpose assistant requests
-
-### Important boundary
-
-Sistem boleh memahami bahasa natural yang luas untuk menentukan apakah pertanyaan masih berkaitan dengan keimigrasian, tetapi **jawaban publik tetap dibatasi oleh domain dan sumber yang disetujui**.
-
 ## 4. Answer Database First
 
 Jawaban resmi harus dapat disimpan sebagai data terstruktur, bukan hanya prompt AI.
@@ -89,49 +74,85 @@ Status lifecycle:
 
 `DRAFT → REVIEW → APPROVED → PUBLISHED → EXPIRED → ARCHIVED`
 
-## 5. Mass Knowledge Generation / Answer Factory
+## 5. Knowledge Ingestion & Document Intelligence
 
-Target utama bukan membuat FAQ manual satu per satu, tetapi membangun mesin yang dapat memperbanyak coverage pengetahuan secara terkontrol.
+Admin/petugas harus dapat memasukkan knowledge secara manual melalui form maupun mengunggah sumber dalam format yang didukung, termasuk PDF, PPTX, DOCX, XLSX/CSV, TXT, dan format lain yang ditetapkan.
 
 Pipeline:
 
-`Official Source → Extract → Normalize → Generate Questions → Generate Synonyms → Generate Answer Drafts → Generate Test Cases → Human Review → Approved Database`
+`Manual Entry / Upload → Validation → Metadata → Extraction → Normalization → Deterministic Indexing → Optional AI Enrichment → Human Review → Approval → Publish`
 
-Satu sumber resmi dapat menghasilkan banyak question patterns, intent mappings, answer variants, multilingual variants, policy references, dan regression test cases.
+Sistem harus menyimpan sumber asli, hash/checksum, metadata, provenance, versi, tanggal berlaku, status akses, status approval, dan audit trail.
+
+### Document access classification
+
+Saat upload, admin/petugas **WAJIB memilih klasifikasi akses**:
+
+- `PUBLIC` — dapat digunakan sebagai sumber informasi publik; dapat dilampirkan ke WhatsApp hanya jika juga memenuhi aturan attachment dan status publikasi.
+- `PRIVATE / INTERNAL` — hanya untuk petugas/admin; **tidak boleh dilampirkan atau dikirim melalui WhatsApp kepada masyarakat**.
+- `RESTRICTED` — terbatas berdasarkan permission; **deny-by-default untuk attachment publik**.
+
+Klasifikasi akses dan hak attachment harus disimpan sebagai atribut backend, bukan hanya checkbox frontend.
+
+Contoh policy:
+
+`PUBLIC + APPROVED/PUBLISHED + ALLOW_WHATSAPP_ATTACHMENT=true + RELEVANT_TO_CONTEXT → attachment permitted`
+
+`PRIVATE/INTERNAL → attachment denied`
+
+`RESTRICTED → attachment denied by default unless an explicitly authorized workflow permits it`
+
+Backend **WAJIB melakukan authorization check sebelum memanggil WhatsApp send-media API**. Manipulasi request frontend tidak boleh dapat melewati kontrol tersebut.
+
+## 6. Contextual Document Attachment Engine
+
+Sistem dapat mengaitkan dokumen publik yang telah disetujui dengan intent, topic, service, policy, dan konteks percakapan.
+
+Pipeline:
+
+`User Query → Intent/Topic → Knowledge Search → Relevant Public Documents → Access/Approval Check → Attachment Policy → WhatsApp Response`
+
+Mesin tidak boleh mengirim dokumen hanya karena nama file cocok. Dokumen harus relevan, approved/published, berstatus publik, dan lolos policy attachment.
+
+Dokumen internal petugas tidak boleh bocor melalui chatbot.
+
+## 7. Mass Knowledge Generation / Answer Factory
+
+Target utama bukan membuat FAQ manual satu per satu, tetapi membangun mesin yang dapat memperbanyak coverage pengetahuan secara terkontrol.
+
+`Official Source → Extract → Normalize → Generate Questions → Generate Synonyms → Generate Answer Drafts → Generate Test Cases → Human Review → Approved Database`
 
 AI dapat digunakan ketika tersedia untuk mempercepat proses tersebut. Hasil AI **tidak otomatis menjadi kebenaran** dan harus melewati governance/approval sebelum publikasi.
 
-## 6. Knowledge Harvesting ketika AI Tersedia
+## 8. Knowledge Harvesting ketika AI Tersedia
 
-Jika provider AI tersedia, sistem dapat menjalankan **Knowledge Harvesting Mode**:
+Jika provider AI tersedia:
 
 `AI Connected → Analyze Source/Question → Generate/Improve Knowledge → Validate → Review → Store → Reuse`
 
-Tujuan utamanya adalah mengubah penggunaan AI menjadi aset database jangka panjang, sehingga nilai AI tidak hilang setelah satu response selesai.
+Tujuan utamanya adalah mengubah penggunaan AI menjadi aset database jangka panjang.
 
-## 7. AI-Disconnected Operation
+## 9. AI-Disconnected Operation
 
 Jika AI API terputus, habis kuota, tidak tersedia, atau sengaja dinonaktifkan:
 
 `WhatsApp → Domain Guard → Intent/Search → Cache → Answer DB → Policy Engine → Response`
 
-Pertanyaan kompleks yang tidak dapat dijawab secara aman harus masuk ke safe fallback/human handoff, bukan dibuat-buat oleh sistem.
+Pertanyaan kompleks yang tidak dapat dijawab secara aman harus masuk ke safe fallback/human handoff, bukan dibuat-buat.
 
-## 8. Policy Engine
+## 10. Policy Engine
 
-Aturan kritis seperti tarif, persyaratan, eligibility, masa berlaku, kewenangan kantor, dan batasan layanan harus dapat ditegakkan secara deterministik melalui policy engine.
+Aturan kritis seperti tarif, persyaratan, eligibility, masa berlaku, kewenangan kantor, batasan layanan, serta hak penggunaan dokumen publik harus dapat ditegakkan secara deterministik.
 
 LLM tidak boleh menjadi sumber kebenaran tunggal.
 
-## 9. Knowledge Governance
+## 11. Knowledge Governance
 
 AI boleh membantu mengekstrak regulasi, membuat draft FAQ, membuat variasi pertanyaan, membuat embedding, dan menghasilkan test cases. AI **tidak boleh langsung menerbitkan aturan/jawaban hukum ke publik**.
 
-Flow:
-
 `Official Source → AI-assisted Draft → Human/Authorized Review → Approval → Publish`
 
-## 10. Resilience / Graceful Degradation
+## 12. Resilience / Graceful Degradation
 
 Fallback berlapis:
 
@@ -145,15 +166,13 @@ Fallback berlapis:
 
 Kegagalan AI tidak boleh menghasilkan kegagalan total layanan.
 
-## 11. AI Provider Abstraction
+## 13. AI Provider Abstraction
 
 AI harus diakses melalui abstraction layer agar provider dapat diganti tanpa mengubah conversation engine, knowledge base, database, atau business logic.
 
 `AI Gateway → Provider Adapter → Model`
 
-Provider dapat berubah; contract internal tetap stabil.
-
-## 12. Core Modules
+## 14. Core Modules
 
 - WhatsApp Gateway
 - Domain Guard / Immigration Scope Engine
@@ -162,6 +181,9 @@ Provider dapat berubah; contract internal tetap stabil.
 - Answer Database
 - Question Pattern Database
 - Knowledge Base
+- Document Ingestion Engine
+- Document Access Control
+- Contextual Document Attachment Engine
 - Knowledge Compiler / Answer Factory
 - Policy Engine
 - AI Router
@@ -179,21 +201,7 @@ Provider dapat berubah; contract internal tetap stabil.
 - Security/RBAC
 - Administration / Knowledge Control Center
 
-## 13. Initial Intent Domains
-
-### Paspor
-
-`PASSPORT_NEW`, `PASSPORT_REPLACEMENT`, `PASSPORT_EXPIRED`, `PASSPORT_LOST`, `PASSPORT_DAMAGED`, `PASSPORT_DATA_CHANGE`, `PASSPORT_CHILD`, `PASSPORT_STATUS`, `PASSPORT_REQUIREMENTS`, `PASSPORT_COST`, `PASSPORT_OFFICE`, `PASSPORT_APPOINTMENT`
-
-### WNA
-
-`VISA_INFORMATION`, `VISA_REQUIREMENT`, `VISA_EXTENSION`, `VISA_STATUS`, `STAY_PERMIT`, `ITAS`, `ITAP`, `REENTRY_PERMIT`, `SPONSOR`, `CHANGE_OF_STATUS`, `OVERSTAY`, `FOREIGNER_REPORT`
-
-### Complaint / Reporting
-
-`COMPLAINT`, `SERVICE_COMPLAINT`, `OFFICER_COMPLAINT`, `SYSTEM_COMPLAINT`, `FRAUD_REPORT`, `CORRUPTION_REPORT`, `FOREIGNER_REPORT`, `IMMIGRATION_VIOLATION_REPORT`, `EMERGENCY_IMMIGRATION_REPORT`
-
-## 14. Complaint and Violation Reporting Guardrails
+## 15. Complaint and Violation Reporting Guardrails
 
 Pengaduan atau laporan pelanggaran harus diperlakukan sebagai **case workflow**, bukan sekadar chatbot response.
 
@@ -208,34 +216,35 @@ Sistem harus:
 - menyimpan audit trail;
 - memberikan status hanya jika tersedia sumber/status resmi.
 
-## 15. Safety Rules
-
-- Never invent tariffs, requirements, legal bases, or service status.
-- Never present AI speculation as official immigration policy.
-- Non-immigration requests receive a safe scope-boundary response.
-- Sensitive/complex cases require escalation according to policy.
-- Individual legal/administrative decisions remain with authorized officers.
-- Personal data must be minimized, protected, retained only according to approved policy, and audited.
-- All consequential AI responses must be traceable to model/version, knowledge version, policy version, and source material.
-
 ## 16. Question Intelligence
-
-Setiap pertanyaan dapat menjadi sumber peningkatan layanan tanpa menjadikan percakapan pengguna sebagai training bebas.
-
-Pipeline:
 
 `Conversation → Classify → Aggregate → Identify Knowledge Gap → Draft Improvement → Review → Publish`
 
-Sistem dapat mendeteksi:
+Sistem dapat mendeteksi pertanyaan populer, pertanyaan gagal, istilah baru, perubahan pola kebutuhan, kebingungan layanan, dan tren pengaduan.
 
-- pertanyaan paling sering;
-- pertanyaan yang gagal dijawab;
-- istilah masyarakat yang belum dikenal;
-- perubahan pola kebutuhan;
-- potensi kebingungan pada suatu layanan;
-- tren pengaduan.
+## 17. Regulation Change & Impact Management
 
-## 17. Future-proofing for 5+ Years
+Peraturan pemerintah dan kebijakan keimigrasian diperlakukan sebagai **living knowledge**.
+
+Perubahan harus mendukung:
+
+`New Source → Version → Impact Analysis → Affected Policies/Answers/FAQs/Workflows → Review → Approval → Publish`
+
+Versi lama tidak dihapus tanpa jejak; statusnya dapat menjadi `SUPERSEDED`/`EXPIRED`/`ARCHIVED` sesuai kebijakan.
+
+Setiap perubahan penting harus memiliki change record, alasan, sumber, approver, timestamp, dan audit trail.
+
+## 18. Change Governance
+
+Blueprint dan roadmap adalah **living documents**, bukan spesifikasi beku. Perubahan dapat dilakukan atas persetujuan owner serta berdasarkan audit, koreksi, security finding, testing, kebutuhan operasional, atau perubahan kebijakan pemerintah.
+
+Perubahan mengikuti prinsip:
+
+`Proposal → Review → Owner Approval → Implement → Test → Audit → Deploy → Update Baseline`
+
+Emergency regulatory changes dapat memakai jalur emergency change dengan validasi dan audit setelah implementasi.
+
+## 19. Future-proofing for 5+ Years
 
 Keep these contracts stable:
 
@@ -246,37 +255,14 @@ Keep these contracts stable:
 - question/intent schema
 - conversation/message model
 - case/ticket model
+- document/provenance model
 - audit model
 - integration API contracts
 - AI provider abstraction
 
-Technology components such as LLM provider, embedding model, vector store, frontend framework, and deployment platform may be replaced independently.
+Technology components such as LLM provider, embedding model, vector store, frontend framework, storage provider, and deployment platform may be replaced independently.
 
-## 18. Strategic Positioning
-
-The product is not merely a WhatsApp chatbot. It is a **Conversational Immigration Service Platform**:
-
-`WhatsApp = channel`
-
-`Domain Guard = immigration boundary`
-
-`Conversation Engine = interaction layer`
-
-`Knowledge Base = source of truth`
-
-`Answer Database = reusable service knowledge`
-
-`Policy Engine = rule enforcement`
-
-`AI = optional intelligence layer`
-
-`Service Integrations = transaction layer`
-
-`Case/Ticketing = operational layer`
-
-`Analytics = service intelligence layer`
-
-## 19. Non-Negotiable Principles
+## 20. Non-Negotiable Principles
 
 1. AI provider is never a single point of failure.
 2. Known questions remain serviceable with AI disabled.
@@ -287,8 +273,11 @@ The product is not merely a WhatsApp chatbot. It is a **Conversational Immigrati
 7. Sensitive decisions remain under authorized human control.
 8. Every consequential response is auditable.
 9. No vendor lock-in at the application architecture level.
-10. Knowledge generated through AI should become reusable structured data whenever it is validated and approved.
+10. Validated AI-generated knowledge should become reusable structured data whenever appropriate.
+11. Public documents may be attached only after backend access/approval/attachment checks.
+12. Private/internal documents must never be exposed through the public chatbot.
+13. Regulation and policy changes must be versioned, impact-analysed, reviewed, and auditable.
 
-## 20. Brainstorming Rule
+## 21. Brainstorming Rule
 
-This document is the current baseline, not a frozen final specification. New ideas may extend or refine the architecture, provided they preserve official-source grounding, AI optionality, graceful degradation, security, auditability, human accountability, and strict immigration-domain boundaries.
+This document is the current baseline, not a frozen final specification. New ideas may extend or refine the architecture, provided they preserve official-source grounding, AI optionality, graceful degradation, security, auditability, human accountability, strict immigration-domain boundaries, controlled document publication, and owner-approved change governance.
