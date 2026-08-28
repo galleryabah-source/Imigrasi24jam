@@ -6,9 +6,7 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/core/domain-guard.js && node --check src/core/normalization.js && node --check src/core/answer-engine.js && node --check src/core/policy-engine.js"
+    "check": "node --check src/core/domain-guard.js && node --check src/core/normalization.js && node --check src/core/intent-registry.js && node --check src/core/answer-engine.js && node --check src/core/policy-engine.js && node --check src/core/knowledge-contract.js"
   },
-  "engines": {
-    "node": ">=20"
-  }
+  "engines": { "node": ">=20" }
 }
