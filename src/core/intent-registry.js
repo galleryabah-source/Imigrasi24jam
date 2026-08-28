@@ -22,21 +22,37 @@ const RULES = [
   ['HUMAN_HANDOFF', ['petugas', 'bicara dengan petugas', 'hubungi petugas']]
 ];
 
-function patternMatches(text, pattern) {
-  if (text.includes(pattern)) return true;
-  const queryTokens = new Set(text.split(' ').filter(Boolean));
-  const patternTokens = pattern.split(' ').filter(Boolean);
-  if (!patternTokens.length) return false;
+function tokenize(text) {
+  return String(text ?? '').split(' ').filter(Boolean);
+}
+
+function matchScore(text, pattern) {
+  if (text.includes(pattern)) return 1 + tokenize(pattern).length * 0.02;
+  const queryTokens = new Set(tokenize(text));
+  const patternTokens = tokenize(pattern);
+  if (!patternTokens.length) return 0;
   const overlap = patternTokens.filter((token) => queryTokens.has(token)).length;
-  return overlap / patternTokens.length >= 0.67;
+  const coverage = overlap / patternTokens.length;
+  return coverage >= 0.67 ? coverage : 0;
 }
 
 export function classifyIntent(normalizedText) {
   const text = String(normalizedText ?? '').trim();
   if (!text) return { intent: INTENTS.REVIEW_REQUIRED, confidence: 0, matchedRules: [] };
-  const matches = RULES.filter(([, patterns]) => patterns.some((pattern) => patternMatches(text, pattern)))
-    .map(([intent, patterns]) => ({ intent, patterns: patterns.filter((p) => patternMatches(text, p)) }));
+
+  const matches = RULES.map(([intent, patterns]) => {
+    const patternScores = patterns.map((pattern) => ({ pattern, score: matchScore(text, pattern) })).filter((item) => item.score > 0);
+    const best = patternScores.sort((a, b) => b.score - a.score)[0];
+    return best ? { intent, pattern: best.pattern, score: best.score } : null;
+  }).filter(Boolean).sort((a, b) => b.score - a.score);
+
   if (!matches.length) return { intent: INTENTS.OUT_OF_DOMAIN, confidence: 0, matchedRules: [] };
-  if (matches.length > 1) return { intent: INTENTS.AMBIGUOUS, confidence: 0.5, matchedRules: matches };
-  return { intent: matches[0].intent, confidence: 0.9, matchedRules: matches };
+
+  const best = matches[0];
+  const second = matches[1];
+  if (second && Math.abs(best.score - second.score) < 0.03) {
+    return { intent: INTENTS.AMBIGUOUS, confidence: 0.5, matchedRules: matches.slice(0, 3) };
+  }
+
+  return { intent: best.intent, confidence: Math.min(best.score, 0.99), matchedRules: matches.slice(0, 3) };
 }
