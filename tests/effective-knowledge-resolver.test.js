@@ -5,22 +5,28 @@ import { resolveEffectiveKnowledge, selectEffectiveKnowledge } from '../src/core
 const items = [
   { id: 'K1', intent: 'PASSPORT_NEW', status: 'PUBLISHED', effective_from: '2025-01-01T00:00:00Z', effective_until: '2026-01-01T00:00:00Z' },
   { id: 'K2', intent: 'PASSPORT_NEW', status: 'PUBLISHED', effective_from: '2026-01-01T00:00:00Z' },
-  { id: 'K3', intent: 'PASSPORT_NEW', status: 'DRAFT', effective_from: '2027-01-01T00:00:00Z' }
+  { id: 'K3', intent: 'VISA', status: 'PUBLISHED', effective_from: '2025-01-01T00:00:00Z' },
+  { id: 'K4', intent: 'PASSPORT_NEW', status: 'DRAFT', effective_from: '2026-01-01T00:00:00Z' }
 ];
 
-test('resolver selects knowledge effective at requested time', () => {
-  assert.equal(selectEffectiveKnowledge(items, '2025-06-01T00:00:00Z').item.id, 'K1');
-  assert.equal(selectEffectiveKnowledge(items, '2026-06-01T00:00:00Z').item.id, 'K2');
+test('resolver selects knowledge effective at requested time and intent', () => {
+  assert.equal(selectEffectiveKnowledge(items, '2025-06-01T00:00:00Z', 'PASSPORT_NEW').item.id, 'K1');
+  assert.equal(selectEffectiveKnowledge(items, '2026-06-01T00:00:00Z', 'PASSPORT_NEW').item.id, 'K2');
 });
 
-test('draft knowledge is never effective', () => {
-  assert.deepEqual(resolveEffectiveKnowledge(items, '2027-06-01T00:00:00Z').map((item) => item.id), ['K2']);
+test('future and non-published knowledge are excluded', () => {
+  const result = resolveEffectiveKnowledge(items, { intent: 'PASSPORT_NEW', at: '2025-06-01T00:00:00Z' });
+  assert.deepEqual(result.items.map((item) => item.id), ['K1']);
 });
 
-test('conflicting published versions trigger review', () => {
-  const result = selectEffectiveKnowledge([
-    { id: 'A', intent: 'VISA_GENERAL', status: 'PUBLISHED', effective_from: '2026-01-01T00:00:00Z' },
-    { id: 'B', intent: 'VISA_GENERAL', status: 'PUBLISHED', effective_from: '2026-01-01T00:00:00Z' }
-  ], '2026-06-01T00:00:00Z');
+test('overlapping published versions trigger conflict review', () => {
+  const result = resolveEffectiveKnowledge([
+    ...items,
+    { id: 'K5', intent: 'PASSPORT_NEW', status: 'PUBLISHED', effective_from: '2025-06-01T00:00:00Z' }
+  ], { intent: 'PASSPORT_NEW', at: '2025-07-01T00:00:00Z' });
   assert.equal(result.status, 'CONFLICT_REVIEW');
+});
+
+test('different intents do not create a false conflict', () => {
+  assert.equal(resolveEffectiveKnowledge(items, { intent: 'VISA', at: '2025-06-01T00:00:00Z' }).status, 'RESOLVED');
 });
