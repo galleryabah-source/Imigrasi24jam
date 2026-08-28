@@ -6,7 +6,12 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/core/domain-guard.js && node --check src/core/normalization.js && node --check src/core/intent-registry.js && node --check src/core/answer-engine.js && node --check src/core/policy-engine.js && node --check src/core/knowledge-contract.js"
+    "test:db": "node --test tests/postgres-integration.test.js",
+    "migrate:test": "node scripts/migrate-test-db.js",
+    "check": "node --check src/core/domain-guard.js && node --check src/core/normalization.js && node --check src/core/intent-registry.js && node --check src/core/answer-engine.js && node --check src/core/policy-engine.js && node --check src/core/knowledge-contract.js && node --check src/db/transactional-workflow.js && node --check src/db/postgres-adapter.js && node --check src/core/document-validator.js && node --check src/core/knowledge-candidate.js"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
   },
   "engines": { "node": ">=20" }
 }
