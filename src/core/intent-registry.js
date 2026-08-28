@@ -10,7 +10,7 @@ const RULES = [
   ['PASSPORT_LOST', ['paspor hilang', 'passport hilang', 'kehilangan paspor']],
   ['PASSPORT_DAMAGED', ['paspor rusak', 'passport rusak', 'paspor sobek']],
   ['PASSPORT_REPLACEMENT', ['ganti paspor', 'penggantian paspor', 'perpanjang paspor']],
-  ['PASSPORT_NEW', ['buat paspor', 'membuat paspor', 'paspor baru']],
+  ['PASSPORT_NEW', ['buat paspor', 'membuat paspor', 'paspor baru', 'syarat membuat paspor baru']],
   ['OVERSTAY', ['overstay', 'kelebihan masa tinggal']], ['ITAS', ['itas', 'izin tinggal terbatas']], ['ITAP', ['itap', 'izin tinggal tetap']],
   ['STAY_PERMIT', ['izin tinggal', 'stay permit']], ['VISA_GENERAL', ['visa', 'evisa', 'e visa']],
   ['IMMIGRATION_VIOLATION_REPORT', ['lapor wna', 'laporan wna', 'pelanggaran wna', 'pelanggaran imigrasi']],
