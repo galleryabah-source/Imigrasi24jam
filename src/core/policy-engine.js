@@ -11,6 +11,9 @@ export function canAttachDocument(document) {
     document &&
     document.access_classification === 'PUBLIC' &&
     document.status === 'PUBLISHED' &&
+    document.immigration_relevance_status === 'VERIFIED' &&
+    document.authority_status === 'VERIFIED' &&
+    document.content_integrity_status === 'VERIFIED' &&
     document.allow_whatsapp_attachment === true
   );
 }
