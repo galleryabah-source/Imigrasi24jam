@@ -28,7 +28,14 @@ export async function orchestrateMessage({ message, conversation = null, knowled
 
   const selected = retrieval.items[0].item;
   const evidence = evidenceByKnowledgeId[selected.id] ?? [];
-  const answer = buildDeterministicAnswer({ knowledge: selected, evidence });
+  let answer;
+  try {
+    answer = buildDeterministicAnswer({ knowledge: selected, evidence });
+  } catch (error) {
+    state = transitionConversation(state, { type: 'ESCALATE' });
+    return Object.freeze({ status: 'SAFE_FALLBACK', state, intent, retrieval, reason: error.message });
+  }
+
   const safety = evaluateAnswerSafety({ intent: intent.code, answer: answer.direct_answer, sources: evidence, confidence: retrieval.items[0].score, providerAvailable: false });
   if (safety.decision !== 'ANSWER') {
     state = transitionConversation(state, { type: 'ESCALATE' });
