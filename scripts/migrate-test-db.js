@@ -5,14 +5,25 @@ const { Client } = pg;
 const url = process.env.DATABASE_URL;
 if (!url) throw new Error('DATABASE_URL_REQUIRED');
 
-const sql = await fs.readFile(new URL('../database/migrations/0001_initial.sql', import.meta.url), 'utf8');
+const migrations = [
+  '0001_initial.sql',
+  '0002_regulatory_relationships.sql',
+  '0003_evidence_citations.sql',
+  '0004_inbox_outbox.sql',
+  '0005_outbox_leases.sql'
+];
+
 const client = new Client({ connectionString: url });
 try {
   await client.connect();
   await client.query('BEGIN');
-  await client.query(sql);
+  for (const name of migrations) {
+    const sql = await fs.readFile(new URL(`../database/migrations/${name}`, import.meta.url), 'utf8');
+    await client.query(sql);
+    console.log(`Applied ${name}`);
+  }
   await client.query('COMMIT');
-  console.log('Migration 0001 applied successfully');
+  console.log('All migrations applied successfully');
 } catch (error) {
   try { await client.query('ROLLBACK'); } catch {}
   console.error(error);
