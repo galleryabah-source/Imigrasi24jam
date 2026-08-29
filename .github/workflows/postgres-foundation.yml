@@ -4,10 +4,16 @@ on:
   push:
     branches: [phase0-runtime-foundation-2026-08-27]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: imigrasi24-postgres-foundation-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   postgres-foundation:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16
