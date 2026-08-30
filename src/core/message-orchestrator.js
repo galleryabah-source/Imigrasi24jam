@@ -14,7 +14,7 @@ export async function orchestrateMessage({ message, conversation = null, knowled
     state = transitionConversation(state, { type: 'OUT_OF_SCOPE' });
     return Object.freeze({ status: 'OUT_OF_SCOPE', state, intent });
   }
-  if (intent.confidence < 0.5) {
+  if (intent.intent === 'AMBIGUOUS' || intent.confidence <= 0.5) {
     state = transitionConversation(state, { type: 'AMBIGUOUS_INTENT', question: 'Mohon jelaskan layanan keimigrasian yang ingin ditanyakan.' });
     return Object.freeze({ status: 'CLARIFICATION', state, intent, response: state.pending_question });
   }
