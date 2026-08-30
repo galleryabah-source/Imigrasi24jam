@@ -20,6 +20,8 @@ export function normalizeExtractedText(text) {
     .replace(/\u0000/g, '')
     .replace(/\r\n?/g, '\n')
     .replace(/[ \t]+/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
