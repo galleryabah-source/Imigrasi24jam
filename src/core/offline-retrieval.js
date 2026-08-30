@@ -6,7 +6,7 @@ function effective(item, at) {
 }
 
 function tokenSet(value) {
-  return new Set(String(value ?? '').toLowerCase().normalize('NFKC').split(/\s+/).filter(Boolean));
+  return new Set(String(value ?? '').toLowerCase().normalize('NFKC').replace(/[^\p{L}\p{N}]+/gu, ' ').split(/\s+/).filter(Boolean));
 }
 
 function overlap(a, b) {
