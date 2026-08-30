@@ -10,7 +10,8 @@ test('real PostgreSQL replay admission has exactly one winner', { skip: !url }, 
   const setup = new Client({ connectionString: url });
   await setup.connect();
   try {
-    await setup.query('CREATE TEMP TABLE IF NOT EXISTS webhook_replay (key_hash text PRIMARY KEY, expires_at timestamptz NOT NULL)');
+    const keyHash = (await setup.query("SELECT encode(sha256('concurrent-integration-key'::bytea), 'hex') AS hash")).rows[0].hash;
+    await setup.query('DELETE FROM webhook_replay WHERE key_hash = $1', [keyHash]);
   } finally { await setup.end(); }
 
   const clients = await Promise.all(Array.from({ length: 10 }, async () => {
