@@ -91,6 +91,24 @@ test('HTTP webhook accepts valid signed event and acknowledges replay without du
   assert.equal(tx.writes, 1);
 });
 
+test('HTTP webhook treats the same message replayed with a new valid timestamp as a duplicate', async (t) => {
+  const { server, tx, url } = await startServer();
+  t.after(() => server.close());
+
+  const firstTimestamp = Math.floor(Date.now() / 1000).toString();
+  const secondTimestamp = (Number(firstTimestamp) + 1).toString();
+  const signature = sign(body);
+
+  const first = await post(url, body, { 'x-signature': signature, 'x-timestamp': firstTimestamp });
+  const second = await post(url, body, { 'x-signature': signature, 'x-timestamp': secondTimestamp });
+  const secondPayload = await second.json();
+
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(secondPayload.duplicate, true);
+  assert.equal(tx.writes, 1);
+});
+
 test('HTTP webhook rejects invalid signature before persistence', async (t) => {
   const { server, tx, url } = await startServer();
   t.after(() => server.close());
