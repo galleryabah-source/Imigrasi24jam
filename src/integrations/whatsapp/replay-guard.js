@@ -1,5 +1,5 @@
 export function createReplayGuard({ store, windowSeconds = 300 }) {
-  if (!store || typeof store.has !== 'function' || typeof store.put !== 'function') throw new Error('REPLAY_STORE_REQUIRED');
+  if (!store || typeof store.acceptIfAbsent !== 'function') throw new Error('ATOMIC_REPLAY_STORE_REQUIRED');
   if (!Number.isInteger(windowSeconds) || windowSeconds <= 0) throw new Error('INVALID_REPLAY_WINDOW');
 
   return Object.freeze({
@@ -7,9 +7,7 @@ export function createReplayGuard({ store, windowSeconds = 300 }) {
       if (!provider || !messageId || !Number.isFinite(timestamp)) return false;
       if (Math.abs(nowSeconds - timestamp) > windowSeconds) return false;
       const key = `${provider}:${messageId}`;
-      if (await store.has(key)) return false;
-      await store.put(key, windowSeconds);
-      return true;
+      return (await store.acceptIfAbsent(key, windowSeconds)) === true;
     }
   });
 }
