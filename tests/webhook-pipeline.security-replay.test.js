@@ -5,9 +5,14 @@ import { createWebhookSecurityGate } from '../src/integrations/whatsapp/webhook-
 import { processWhatsAppWebhook } from '../src/integrations/whatsapp/webhook-pipeline.js';
 
 const secret = 'pipeline-secret';
-const timestamp = 1700000000;
 const body = JSON.stringify({ id: 'wamid-e2e-1', from: 'user-1', type: 'text', text: ' hello ' });
-const signature = `sha256=${crypto.createHmac('sha256', secret).update(body).digest('hex')}`;
+
+function signedRequest(timestampSeconds) {
+  return {
+    timestampSeconds,
+    signature: `sha256=${crypto.createHmac('sha256', secret).update(body).digest('hex')}`
+  };
+}
 
 function transactionStub() {
   let writes = 0;
@@ -16,6 +21,7 @@ function transactionStub() {
 
 test('security rejection prevents replay/inbox processing', async () => {
   const tx = transactionStub();
+  const timestamp = Math.floor(Date.now() / 1000);
   const result = await processWhatsAppWebhook({ rawBody: body, signature: 'sha256=bad', timestampSeconds: timestamp, securityGate: createWebhookSecurityGate({ secret }), inboxTransaction: tx });
   assert.equal(result.status, 401);
   assert.equal(tx.writes, 0);
@@ -24,6 +30,8 @@ test('security rejection prevents replay/inbox processing', async () => {
 test('valid event is admitted once and duplicate is acknowledged', async () => {
   const tx = transactionStub();
   const securityGate = createWebhookSecurityGate({ secret });
+  const timestamp = Math.floor(Date.now() / 1000);
+  const { signature } = signedRequest(timestamp);
   const first = await processWhatsAppWebhook({ rawBody: body, signature, timestampSeconds: timestamp, securityGate, inboxTransaction: tx });
   const second = await processWhatsAppWebhook({ rawBody: body, signature, timestampSeconds: timestamp, securityGate, inboxTransaction: tx });
   assert.equal(first.status, 200);
