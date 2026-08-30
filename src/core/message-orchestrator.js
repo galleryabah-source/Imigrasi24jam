@@ -20,7 +20,12 @@ export async function orchestrateMessage({ message, conversation = null, knowled
   }
 
   state = transitionConversation(state, { type: 'INTENT_RESOLVED', intent: intent.code });
-  const retrieval = retrieveOffline(knowledge, { intent: intent.code, query: text, at: now });
+  const retrieval = retrieveOffline(knowledge, {
+    intent: intent.code,
+    query: text,
+    at: now,
+    verifiedEvidenceByKnowledgeId: evidenceByKnowledgeId
+  });
   if (retrieval.status !== 'RESOLVED') {
     state = transitionConversation(state, { type: 'ESCALATE' });
     return Object.freeze({ status: retrieval.status, state, intent, retrieval });
