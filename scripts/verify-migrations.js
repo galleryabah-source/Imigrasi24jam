@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const dir = path.resolve('database/migrations');
-const expected = ['0001_initial.sql','0002_regulatory_relationships.sql','0003_evidence_citations.sql','0004_inbox_outbox.sql','0005_outbox_leases.sql'];
+const expected = ['0001_initial.sql','0002_regulatory_relationships.sql','0003_evidence_citations.sql','0004_inbox_outbox.sql','0005_outbox_leases.sql','0006_webhook_replay.sql'];
 
 if (!fs.existsSync(dir)) throw new Error('MIGRATION_DIRECTORY_MISSING');
 const files = fs.readdirSync(dir).filter((f) => /^\d{4}_.+\.sql$/.test(f)).sort();
