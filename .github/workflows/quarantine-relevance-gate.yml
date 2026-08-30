@@ -1,0 +1,23 @@
+name: Imigrasi24jam Quarantine Relevance Gate
+
+on:
+  push:
+    branches: [main, 'phase0-*', 'hardening/*']
+  pull_request:
+
+jobs:
+  quarantine-relevance-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install
+      - name: Syntax check
+        run: node --check tests/quarantine-relevance-gate.test.js
+      - name: Quarantine/Relevance Gate
+        run: node --test tests/quarantine-relevance-gate.test.js
