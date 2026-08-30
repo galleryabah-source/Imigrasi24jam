@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { orchestrateMessage } from '../src/core/message-orchestrator.js';
 
-const knowledge = [{ id:'K1', intent:'PASSPORT', status:'PUBLISHED', effective_from:'2026-01-01', sub_intent:null, question_patterns:['syarat paspor'], direct_answer:'Informasi persyaratan paspor.' }];
+const knowledge = [{ id:'K1', intent:'SERVICE_REQUIREMENTS', status:'PUBLISHED', effective_from:'2026-01-01', sub_intent:null, question_patterns:['syarat paspor'], direct_answer:'Informasi persyaratan paspor.' }];
 const evidence = { K1:[{ id:'E1', status:'VERIFIED', document_id:'D1', document_version_id:'DV1', source_id:'S1' }] };
 
 test('orchestrator answers from local knowledge with AI unavailable', async () => {
