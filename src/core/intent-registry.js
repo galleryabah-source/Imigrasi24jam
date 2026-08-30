@@ -56,3 +56,11 @@ export function classifyIntent(normalizedText) {
 
   return { intent: best.intent, confidence: Math.min(best.score, 0.99), matchedRules: matches.slice(0, 3) };
 }
+
+// Compatibility contract for the message orchestrator.
+// Keep the canonical classification fields while exposing the historical code field.
+export function resolveIntent(normalizedText) {
+  const result = classifyIntent(normalizedText);
+  const code = result.intent === INTENTS.OUT_OF_DOMAIN ? 'OUT_OF_SCOPE' : result.intent;
+  return Object.freeze({ ...result, code });
+}
