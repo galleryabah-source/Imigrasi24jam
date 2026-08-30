@@ -39,5 +39,7 @@ jobs:
         run: npm test
       - name: Apply test migration
         run: npm run migrate:test
+      - name: Verify migrated schema
+        run: node --test tests/migration-schema.test.js
       - name: PostgreSQL integration tests
         run: npm run test:db
