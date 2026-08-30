@@ -22,6 +22,8 @@ const RULES = [
   ['HUMAN_HANDOFF', ['petugas', 'bicara dengan petugas', 'hubungi petugas']]
 ];
 
+const AMBIGUOUS_GENERIC_PATTERNS = ['saya mau urus', 'mau urus', 'ingin urus', 'mau mengurus', 'ingin mengurus'];
+
 function tokenize(text) {
   return String(text ?? '').split(' ').filter(Boolean);
 }
@@ -39,6 +41,10 @@ function matchScore(text, pattern) {
 export function classifyIntent(normalizedText) {
   const text = String(normalizedText ?? '').trim();
   if (!text) return { intent: INTENTS.REVIEW_REQUIRED, confidence: 0, matchedRules: [] };
+
+  if (AMBIGUOUS_GENERIC_PATTERNS.some((pattern) => text.includes(pattern))) {
+    return { intent: INTENTS.AMBIGUOUS, confidence: 0.5, matchedRules: [{ intent: INTENTS.AMBIGUOUS, pattern: 'generic service request', score: 0.5 }] };
+  }
 
   const matches = RULES.map(([intent, patterns]) => {
     const patternScores = patterns.map((pattern) => ({ pattern, score: matchScore(text, pattern) })).filter((item) => item.score > 0);
