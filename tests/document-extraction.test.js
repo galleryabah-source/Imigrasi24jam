@@ -14,7 +14,7 @@ test('extracted text is normalized deterministically', () => {
 
 test('extraction result records provenance and quality', () => {
   const result = buildExtractedDocument({ text: 'Paspor\n  WNA', pages: [{ page: 1 }], extractor: 'native', extractorVersion: '1.0' });
-  assert.equal(result.text, 'Paspor\n WNA');
+  assert.equal(result.text, 'Paspor\nWNA');
   assert.equal(result.extractor, 'native');
   assert.equal(result.extraction_quality, 'TEXT_AVAILABLE');
 });
