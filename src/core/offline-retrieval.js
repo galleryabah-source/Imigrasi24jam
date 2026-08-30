@@ -16,14 +16,19 @@ function overlap(a, b) {
   return hits / Math.max(a.size, b.size);
 }
 
-export function retrieveOffline(candidates, { intent, subIntent = null, query = '', at = new Date().toISOString(), limit = 5 } = {}) {
+function hasVerifiedEvidence(item) {
+  return Array.isArray(item?.verified_evidence) && item.verified_evidence.length > 0;
+}
+
+export function retrieveOffline(candidates, { intent, subIntent = null, query = '', at = new Date().toISOString(), limit = 5, verifiedEvidenceByKnowledgeId = {} } = {}) {
   if (!intent) return Object.freeze({ status: 'NO_MATCH', items: [], reason: 'NO_INTENT' });
   const queryTokens = tokenSet(query);
   const eligible = candidates.filter((item) => effective(item, at) && item.intent === intent && (!subIntent || item.sub_intent === subIntent));
   const ranked = eligible.map((item) => {
     const patterns = Array.isArray(item.question_patterns) ? item.question_patterns : [];
     const patternScore = Math.max(0, ...patterns.map((p) => overlap(queryTokens, tokenSet(p))));
-    const evidenceScore = Array.isArray(item.verified_evidence) && item.verified_evidence.length ? 1 : 0;
+    const externalEvidence = verifiedEvidenceByKnowledgeId?.[item.id];
+    const evidenceScore = (hasVerifiedEvidence(item) || (Array.isArray(externalEvidence) && externalEvidence.length > 0)) ? 1 : 0;
     const score = patternScore * 0.7 + evidenceScore * 0.3;
     return { item, score };
   }).sort((a, b) => b.score - a.score || String(a.item.id).localeCompare(String(b.item.id)));
