@@ -1,6 +1,0 @@
-{
-  "functions": {
-    "api/health.js": {},
-    "api/webhook/whatsapp.js": {}
-  }
-}
