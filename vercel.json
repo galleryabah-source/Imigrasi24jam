@@ -1,0 +1,1 @@
+{"functions":{"api/health.js":{"runtime":"nodejs20.x"},"api/webhook/whatsapp.js":{"runtime":"nodejs20.x"}}}
