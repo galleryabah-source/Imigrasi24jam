@@ -18,6 +18,10 @@ jobs:
       - name: Install dependencies
         run: npm install
       - name: Syntax check
-        run: node --check tests/http-webhook.e2e.test.js
+        run: |
+          node --check tests/http-webhook.e2e.test.js
+          node --check tests/security-webhook.e2e.test.js
       - name: HTTP Webhook E2E
         run: node --test tests/http-webhook.e2e.test.js
+      - name: HMAC timestamp replay E2E
+        run: node --test tests/security-webhook.e2e.test.js
