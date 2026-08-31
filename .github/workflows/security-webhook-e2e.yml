@@ -1,0 +1,26 @@
+name: Imigrasi24jam Webhook Security E2E
+
+on:
+  push:
+    branches: ["hardening/attachment-ci"]
+  pull_request:
+    branches: ["hardening/attachment-ci"]
+
+jobs:
+  webhook-security-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Syntax check
+        run: node --check tests/security-webhook.e2e.test.js
+      - name: HMAC timestamp replay E2E
+        run: node --test tests/security-webhook.e2e.test.js
