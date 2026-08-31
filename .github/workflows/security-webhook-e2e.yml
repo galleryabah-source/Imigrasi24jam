@@ -5,6 +5,10 @@ on:
     branches: ["hardening/attachment-ci"]
   pull_request:
     branches: ["hardening/attachment-ci"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   webhook-security-e2e:
