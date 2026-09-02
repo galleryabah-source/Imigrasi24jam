@@ -1,18 +1,36 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createWebhookSecurityGate } from '../../src/integrations/whatsapp/webhook-security.js';
+import { processWhatsAppWebhook } from '../../src/integrations/whatsapp/webhook-pipeline.js';
+import { createInboxOutboxRepository } from '../../src/core/inbox-outbox-repository.js';
+import { createPostgresAdapter } from '../../src/db/postgres-adapter.js';
+
+let inboxTransaction;
+
+function getInboxTransaction() {
+  if (inboxTransaction) return inboxTransaction;
+  const db = createPostgresAdapter();
+  const repository = createInboxOutboxRepository(db);
+  inboxTransaction = Object.freeze({
+    ingest: async ({ provider, providerMessageId, conversationId, sender, payload }) => {
+      const row = await repository.claimInbound({
+        provider,
+        providerMessageId,
+        conversationId,
+        sender,
+        payload
+      });
+      return { accepted: Boolean(row), inboxId: row?.id ?? null };
+    }
+  });
+  return inboxTransaction;
+}
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     req.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-    req.on('end', () => resolve(Buffer.concat(chunks)));
+    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
     req.on('error', reject);
   });
-}
-
-function constantTimeHexEqual(a, b) {
-  const left = Buffer.from(String(a || ''), 'utf8');
-  const right = Buffer.from(String(b || ''), 'utf8');
-  return left.length === right.length && timingSafeEqual(left, right);
 }
 
 export default async function handler(req, res) {
@@ -21,20 +39,25 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'method_not_allowed' });
   }
 
-  const body = await readBody(req);
   const secret = process.env.WEBHOOK_SECRET;
   if (!secret) return res.status(503).json({ error: 'webhook_not_configured' });
 
-  const timestamp = req.headers['x-webhook-timestamp'];
-  const signature = req.headers['x-webhook-signature'];
-  if (!timestamp || !signature) return res.status(401).json({ error: 'missing_signature' });
+  const rawBody = await readBody(req);
+  const securityGate = createWebhookSecurityGate({ secret });
+  const signature = req.headers['x-signature'];
+  const timestampSeconds = req.headers['x-timestamp'];
 
-  const age = Math.abs(Date.now() - Number(timestamp));
-  if (!Number.isFinite(age) || age > 300000) return res.status(401).json({ error: 'invalid_timestamp' });
-
-  const digest = createHash('sha256').update(`${timestamp}.`).update(body).digest('hex');
-  const expected = createHash('sha256').update(secret).update(digest).digest('hex');
-  if (!constantTimeHexEqual(signature, expected)) return res.status(401).json({ error: 'invalid_signature' });
-
-  return res.status(501).json({ error: 'webhook_adapter_not_wired' });
+  try {
+    const result = await processWhatsAppWebhook({
+      rawBody,
+      signature,
+      timestampSeconds,
+      securityGate,
+      inboxTransaction: getInboxTransaction()
+    });
+    return res.status(result.status).json(result);
+  } catch (error) {
+    console.error('whatsapp_webhook_failed', error);
+    return res.status(500).json({ error: 'webhook_processing_failed' });
+  }
 }
