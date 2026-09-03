@@ -12,6 +12,25 @@ export function createInboxOutboxRepository(db) {
       return result.rows[0] ?? null;
     },
 
+    async claimPendingInbound() {
+      const result = await db.query(`
+        WITH candidate AS (
+          SELECT id
+          FROM message_inbox
+          WHERE processing_status = 'RECEIVED'
+          ORDER BY received_at ASC
+          FOR UPDATE SKIP LOCKED
+          LIMIT 1
+        )
+        UPDATE message_inbox i
+        SET processing_status='PROCESSING'
+        FROM candidate c
+        WHERE i.id=c.id
+        RETURNING i.*
+      `);
+      return result.rows[0] ?? null;
+    },
+
     async enqueueOutbound({ conversationId, replyToMessageId, provider, payload }) {
       const result = await db.query(`
         INSERT INTO message_outbox (conversation_id, reply_to_message_id, provider, payload_json)
@@ -23,6 +42,11 @@ export function createInboxOutboxRepository(db) {
 
     async markInboundProcessed(id) {
       await db.query(`UPDATE message_inbox SET processing_status='PROCESSED', processed_at=now() WHERE id=$1 AND processing_status='PROCESSING'`, [id]);
+    },
+
+    async markInboundFailed(id, error) {
+      await db.query(`UPDATE message_inbox SET processing_status='FAILED' WHERE id=$1 AND processing_status='PROCESSING'`, [id]);
+      return Object.freeze({ id, error: String(error ?? '') });
     }
   });
 }
