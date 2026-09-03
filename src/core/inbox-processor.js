@@ -2,7 +2,10 @@ import { orchestrateMessage } from './message-orchestrator.js';
 import { createOutboundMessage } from './message-delivery.js';
 
 function normalizeInboxMessage(row) {
-  const payload = row?.payload_json && typeof row.payload_json === 'object' ? row.payload_json : {};
+  if (!row?.id || !row.provider || !row.provider_message_id || !row.conversation_id || !row.sender) {
+    throw new Error('INBOX_MESSAGE_IDENTITY_INVALID');
+  }
+  const payload = row.payload_json && typeof row.payload_json === 'object' ? row.payload_json : {};
   return {
     provider: row.provider,
     providerMessageId: row.provider_message_id,
@@ -13,8 +16,12 @@ function normalizeInboxMessage(row) {
   };
 }
 
-export function createInboxProcessor({ repository, knowledgeProvider }) {
-  if (!repository || typeof repository.claimPendingInbound !== 'function' || typeof repository.markInboundProcessed !== 'function' || typeof repository.markInboundFailed !== 'function') {
+export function createInboxProcessor({ repository, knowledgeProvider } = {}) {
+  if (!repository ||
+      typeof repository.claimPendingInbound !== 'function' ||
+      typeof repository.markInboundProcessed !== 'function' ||
+      typeof repository.markInboundFailed !== 'function' ||
+      typeof repository.completeInboundWithOutbound !== 'function') {
     throw new Error('INBOX_PROCESSOR_REPOSITORY_REQUIRED');
   }
   if (typeof knowledgeProvider !== 'function') throw new Error('KNOWLEDGE_PROVIDER_REQUIRED');
@@ -27,11 +34,17 @@ export function createInboxProcessor({ repository, knowledgeProvider }) {
       try {
         const message = normalizeInboxMessage(row);
         const knowledge = await knowledgeProvider({ message, now });
+        const candidates = Array.isArray(knowledge) ? knowledge : (knowledge?.items ?? []);
+        const evidenceByKnowledgeId = knowledge && !Array.isArray(knowledge) && knowledge.evidenceByKnowledgeId
+          ? knowledge.evidenceByKnowledgeId
+          : {};
+        if (!Array.isArray(candidates)) throw new Error('KNOWLEDGE_ITEMS_INVALID');
+
         const result = await orchestrateMessage({
           message,
           conversation: null,
-          knowledge: knowledge?.items ?? knowledge ?? [],
-          evidenceByKnowledgeId: knowledge?.evidenceByKnowledgeId ?? {},
+          knowledge: candidates,
+          evidenceByKnowledgeId,
           now
         });
 
@@ -43,7 +56,6 @@ export function createInboxProcessor({ repository, knowledgeProvider }) {
             text: result.text,
             attachments: result.safety?.attachments ?? []
           });
-          if (typeof repository.completeInboundWithOutbound !== 'function') throw new Error('ATOMIC_INBOX_OUTBOX_REQUIRED');
           const queued = await repository.completeInboundWithOutbound({
             inboxId: row.id,
             conversationId: outbound.conversation_id,
@@ -60,7 +72,7 @@ export function createInboxProcessor({ repository, knowledgeProvider }) {
         try {
           await repository.markInboundFailed(row.id, String(error?.message ?? error));
         } catch {
-          // Preserve the original processor outcome; recovery can inspect PROCESSING rows.
+          // Preserve the original processor outcome so a recovery worker can inspect the record.
         }
         return Object.freeze({ status: 'FAILED', inboxId: row.id, reason: 'PROCESSING_ERROR' });
       }
