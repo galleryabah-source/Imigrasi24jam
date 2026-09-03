@@ -14,7 +14,7 @@ function answerKnowledge() {
       effective_until: null
     }],
     evidenceByKnowledgeId: {
-      k1: [{ id: 'e1', verified: true, authority: 'Direktorat Jenderal Imigrasi' }]
+      k1: [{ id: 'e1', status: 'VERIFIED', verified: true, authority: 'Direktorat Jenderal Imigrasi' }]
     }
   };
 }
