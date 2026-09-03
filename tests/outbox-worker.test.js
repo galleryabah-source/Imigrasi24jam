@@ -9,7 +9,7 @@ test('retry uses bounded exponential-style schedule', () => {
   assert.equal(calculateRetry(5).terminal, true);
 });
 
-test('successful delivery marks only outbox as sent', async () => {
+test('successful delivery marks sent and passes a stable idempotency key', async () => {
   const calls = [];
   const worker = createOutboxWorker({
     repository: {
@@ -18,10 +18,12 @@ test('successful delivery marks only outbox as sent', async () => {
       async scheduleOutboundRetry(){ calls.push(['retry']); },
       async markOutboundFailed(){ calls.push(['failed']); }
     },
-    provider: { async send(){ return { provider_message_id:'P1' }; } }
+    provider: { async send(payload, options){ calls.push(['send', payload, options]); return { provider_message_id:'P1' }; } }
   });
   assert.deepEqual(await worker.processOne(), { status:'SENT', id:'O1' });
-  assert.deepEqual(calls, [['sent','O1','P1']]);
+  assert.equal(calls[0][0], 'send');
+  assert.equal(calls[0][2].idempotency_key, 'imigrasi24jam:outbox:O1');
+  assert.deepEqual(calls[1], ['sent','O1','P1']);
 });
 
 test('provider failure schedules retry without rerunning core', async () => {
@@ -37,4 +39,39 @@ test('provider failure schedules retry without rerunning core', async () => {
   });
   assert.deepEqual(await worker.processOne(), { status:'RETRY', id:'O2', delay_seconds:30 });
   assert.deepEqual(calls, [['retry','O2',30]]);
+});
+
+test('provider acknowledgement without acceptance or provider message id is retried', async () => {
+  const calls = [];
+  const worker = createOutboxWorker({
+    repository: {
+      async claimPendingOutbound(){ return { id:'O3', attempt_count:0, payload_json:{ text:'ack' } }; },
+      async markOutboundSent(){ calls.push(['sent']); },
+      async scheduleOutboundRetry(id, delay){ calls.push(['retry', id, delay]); },
+      async markOutboundFailed(){ calls.push(['failed']); }
+    },
+    provider: { async send(){ return { accepted: false }; } }
+  });
+  assert.deepEqual(await worker.processOne(), { status:'RETRY', id:'O3', delay_seconds:30 });
+  assert.deepEqual(calls, [['retry','O3',30]]);
+});
+
+test('persistence failure after provider success is isolated as an ACK recovery case', async () => {
+  const calls = [];
+  const worker = createOutboxWorker({
+    repository: {
+      async claimPendingOutbound(){ return { id:'O4', attempt_count:0, payload_json:{ text:'ack persistence' } }; },
+      async markOutboundSent(){ throw new Error('DB_UNAVAILABLE'); },
+      async scheduleOutboundRetry(id, delay, error){ calls.push(['retry',id,delay,error]); },
+      async markOutboundFailed(){ calls.push(['failed']); }
+    },
+    provider: { async send(){ return { provider_message_id:'P4' }; } }
+  });
+
+  const result = await worker.processOne();
+
+  assert.deepEqual(result, { status:'RETRY_ACK', id:'O4', delay_seconds:30 });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0][0], 'retry');
+  assert.match(calls[0][3], /^ACK_PERSISTENCE_FAILED:/);
 });
