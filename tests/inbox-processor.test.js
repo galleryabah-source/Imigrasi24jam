@@ -3,15 +3,20 @@ import assert from 'node:assert/strict';
 import { createInboxProcessor } from '../src/core/inbox-processor.js';
 
 function answerKnowledge() {
-  return [{
-    id: 'k1',
-    intent: 'PASSPORT_REQUIREMENTS',
-    status: 'PUBLISHED',
-    direct_answer: 'Silakan siapkan dokumen persyaratan paspor sesuai ketentuan yang berlaku.',
-    question_patterns: ['persyaratan paspor'],
-    effective_from: '2026-01-01T00:00:00.000Z',
-    effective_until: null
-  }];
+  return {
+    items: [{
+      id: 'k1',
+      intent: 'PASSPORT_REQUIREMENTS',
+      status: 'PUBLISHED',
+      direct_answer: 'Silakan siapkan dokumen persyaratan paspor sesuai ketentuan yang berlaku.',
+      question_patterns: ['persyaratan paspor'],
+      effective_from: '2026-01-01T00:00:00.000Z',
+      effective_until: null
+    }],
+    evidenceByKnowledgeId: {
+      k1: [{ id: 'e1', verified: true, authority: 'Direktorat Jenderal Imigrasi' }]
+    }
+  };
 }
 
 test('inbox processor queues an answered message through atomic completion', async () => {
@@ -101,4 +106,15 @@ test('inbox processor marks processing failures without leaking error details to
   assert.equal(result.reason, 'PROCESSING_ERROR');
   assert.equal(failedId, 'inbox-3');
   assert.equal('message' in result, false);
+});
+
+test('inbox processor fails closed when atomic completion is unavailable', () => {
+  assert.throws(() => createInboxProcessor({
+    repository: {
+      async claimPendingInbound() {},
+      async markInboundProcessed() {},
+      async markInboundFailed() {}
+    },
+    knowledgeProvider: async () => []
+  }), /INBOX_PROCESSOR_REPOSITORY_REQUIRED/);
 });
