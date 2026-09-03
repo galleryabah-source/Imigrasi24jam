@@ -9,6 +9,7 @@
 | 0005 | `0005_outbox_leases.sql` | additive reliability | No | TEST-ONLY / REVIEW |
 | 0006 | `0006_webhook_replay.sql` | additive replay protection | No | TEST-ONLY / REVIEW |
 | 0007 | `0007_inbox_replay_indexes.sql` | additive indexes | No | TEST-ONLY / REVIEW |
+| 0008 | `0008_inbox_leases.sql` | additive reliability | No | TEST-ONLY / REVIEW |
 
 ## Required verification before production
 
