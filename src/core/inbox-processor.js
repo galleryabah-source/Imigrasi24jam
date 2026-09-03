@@ -37,12 +37,18 @@ export function createInboxProcessor({ repository, knowledgeProvider }) {
 
         if (result.status === 'ANSWER' && String(result.text ?? '').trim()) {
           const outbound = createOutboundMessage({
+            provider: message.provider,
             conversationId: message.conversationId,
             replyToMessageId: row.id,
             text: result.text,
             attachments: result.safety?.attachments ?? []
           });
-          const queued = await repository.enqueueOutbound(outbound);
+          const queued = await repository.enqueueOutbound({
+            conversationId: outbound.conversation_id,
+            replyToMessageId: outbound.reply_to_message_id,
+            provider: outbound.provider,
+            payload: outbound
+          });
           await repository.markInboundProcessed(row.id);
           return Object.freeze({ status: 'QUEUED', inboxId: row.id, outboxId: queued?.id ?? null });
         }
