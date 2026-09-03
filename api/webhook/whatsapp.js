@@ -3,6 +3,7 @@ import { processWhatsAppWebhook } from '../../src/integrations/whatsapp/webhook-
 import { createInboxOutboxRepository } from '../../src/core/inbox-outbox-repository.js';
 import { createPostgresAdapter } from '../../src/db/postgres-adapter.js';
 
+const MAX_WEBHOOK_BODY_BYTES = 1024 * 1024;
 let inboxTransaction;
 
 function getInboxTransaction() {
@@ -24,11 +25,25 @@ function getInboxTransaction() {
   return inboxTransaction;
 }
 
-function readBody(req) {
+function readBody(req, maxBytes = MAX_WEBHOOK_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    let totalBytes = 0;
+    let tooLarge = false;
+
+    req.on('data', (chunk) => {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalBytes += buffer.length;
+      if (totalBytes > maxBytes) {
+        tooLarge = true;
+        return;
+      }
+      chunks.push(buffer);
+    });
+    req.on('end', () => {
+      if (tooLarge) return resolve(null);
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    });
     req.on('error', reject);
   });
 }
@@ -42,7 +57,14 @@ export default async function handler(req, res) {
   const secret = process.env.WEBHOOK_SECRET;
   if (!secret) return res.status(503).json({ error: 'webhook_not_configured' });
 
+  const contentLength = Number(req.headers['content-length']);
+  if (Number.isFinite(contentLength) && contentLength > MAX_WEBHOOK_BODY_BYTES) {
+    return res.status(413).json({ error: 'webhook_body_too_large' });
+  }
+
   const rawBody = await readBody(req);
+  if (rawBody === null) return res.status(413).json({ error: 'webhook_body_too_large' });
+
   const securityGate = createWebhookSecurityGate({ secret });
   const signature = req.headers['x-signature'];
   const timestampSeconds = req.headers['x-timestamp'];
