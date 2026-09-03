@@ -2,21 +2,25 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-function buildSslConfig() {
-  if (process.env.DATABASE_SSL !== 'true') return undefined;
-  const rejectUnauthorized = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false';
-  const ca = process.env.DATABASE_SSL_CA;
+function buildSslConfig({ ssl, rejectUnauthorized = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false', ca = process.env.DATABASE_SSL_CA } = {}) {
+  if (!ssl) return undefined;
   return ca ? { rejectUnauthorized, ca } : { rejectUnauthorized };
 }
 
-export function createPostgresAdapter({ connectionString = process.env.DATABASE_URL, ssl = process.env.DATABASE_SSL === 'true', max = Number(process.env.DATABASE_POOL_MAX ?? 10) } = {}) {
+export function createPostgresAdapter({
+  connectionString = process.env.DATABASE_URL,
+  ssl = process.env.DATABASE_SSL === 'true',
+  sslRejectUnauthorized = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false',
+  sslCa = process.env.DATABASE_SSL_CA,
+  max = Number(process.env.DATABASE_POOL_MAX ?? 10)
+} = {}) {
   if (!connectionString) throw new Error('DATABASE_URL_REQUIRED');
   if (!Number.isInteger(max) || max < 1 || max > 100) throw new Error('INVALID_DATABASE_POOL_MAX');
 
   const pool = new Pool({
     connectionString,
     max,
-    ssl: ssl ? buildSslConfig() : undefined
+    ssl: buildSslConfig({ ssl, rejectUnauthorized: sslRejectUnauthorized, ca: sslCa })
   });
 
   return Object.freeze({
