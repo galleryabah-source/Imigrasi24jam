@@ -2,6 +2,7 @@ export function createOutboxLeaseRepository(db, { workerId, leaseSeconds = 60 } 
   if (!db || typeof db.query !== 'function') throw new Error('DATABASE_QUERY_REQUIRED');
   if (!workerId) throw new Error('WORKER_ID_REQUIRED');
   if (!Number.isInteger(leaseSeconds) || leaseSeconds <= 0) throw new Error('INVALID_LEASE_SECONDS');
+  const boundedError = (value) => String(value ?? '').slice(0, 2000);
 
   return Object.freeze({
     async claimPendingOutbound() {
@@ -28,15 +29,22 @@ export function createOutboxLeaseRepository(db, { workerId, leaseSeconds = 60 } 
     },
 
     async markOutboundSent(id, providerMessageId = null) {
-      await db.query(`UPDATE message_outbox SET delivery_state='SENT', provider_message_id=$2, sent_at=now(), lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$3`, [id, providerMessageId, workerId]);
+      const result = await db.query(`UPDATE message_outbox SET delivery_state='SENT', provider_message_id=$2, sent_at=now(), lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$3 RETURNING id`, [id, providerMessageId, workerId]);
+      if (result.rowCount !== 1) throw new Error('OUTBOX_LEASE_LOST');
+      return result.rows[0];
     },
 
     async scheduleOutboundRetry(id, delaySeconds, error) {
-      await db.query(`UPDATE message_outbox SET delivery_state='RETRY', next_attempt_at=now() + ($2 * interval '1 second'), last_error=$3, lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$4`, [id, delaySeconds, error, workerId]);
+      if (!Number.isInteger(delaySeconds) || delaySeconds < 0) throw new Error('INVALID_RETRY_DELAY');
+      const result = await db.query(`UPDATE message_outbox SET delivery_state='RETRY', next_attempt_at=now() + ($2 * interval '1 second'), last_error=$3, lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$4 RETURNING id`, [id, delaySeconds, boundedError(error), workerId]);
+      if (result.rowCount !== 1) throw new Error('OUTBOX_LEASE_LOST');
+      return result.rows[0];
     },
 
     async markOutboundFailed(id, error) {
-      await db.query(`UPDATE message_outbox SET delivery_state='FAILED', last_error=$2, lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$3`, [id, error, workerId]);
+      const result = await db.query(`UPDATE message_outbox SET delivery_state='FAILED', last_error=$2, lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$3 RETURNING id`, [id, boundedError(error), workerId]);
+      if (result.rowCount !== 1) throw new Error('OUTBOX_LEASE_LOST');
+      return result.rows[0];
     }
   });
 }
