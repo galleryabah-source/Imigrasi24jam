@@ -5,9 +5,9 @@ export function createInboundMessage({ provider, providerMessageId, conversation
   return Object.freeze({ provider, provider_message_id: providerMessageId, conversation_id: conversationId, sender, text: String(text ?? ''), received_at: receivedAt, status: 'RECEIVED' });
 }
 
-export function createOutboundMessage({ conversationId, replyToMessageId, text, attachments = [] }) {
-  if (!conversationId || !replyToMessageId || !String(text ?? '').trim()) throw new Error('OUTBOUND_MESSAGE_REQUIRED');
-  return Object.freeze({ conversation_id: conversationId, reply_to_message_id: replyToMessageId, text: String(text).trim(), attachments: Array.isArray(attachments) ? attachments : [], delivery_state: 'PENDING', attempt_count: 0 });
+export function createOutboundMessage({ provider = 'whatsapp', conversationId, replyToMessageId, text, attachments = [] }) {
+  if (!provider || !conversationId || !replyToMessageId || !String(text ?? '').trim()) throw new Error('OUTBOUND_MESSAGE_REQUIRED');
+  return Object.freeze({ provider, conversation_id: conversationId, reply_to_message_id: replyToMessageId, text: String(text).trim(), attachments: Array.isArray(attachments) ? attachments : [], delivery_state: 'PENDING', attempt_count: 0 });
 }
 
 export function nextDeliveryState(current, event) {
