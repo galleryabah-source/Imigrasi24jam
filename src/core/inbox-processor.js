@@ -1,6 +1,9 @@
 import { orchestrateMessage } from './message-orchestrator.js';
 import { createOutboundMessage } from './message-delivery.js';
 
+const DEFAULT_LEASE_SECONDS = 60;
+const DEFAULT_WORKER_ID = process.env.INBOX_WORKER_ID || `inbox-worker-${process.pid}`;
+
 function normalizeInboxMessage(row) {
   if (!row?.id || !row.provider || !row.provider_message_id || !row.conversation_id || !row.sender) {
     throw new Error('INBOX_MESSAGE_IDENTITY_INVALID');
@@ -16,7 +19,7 @@ function normalizeInboxMessage(row) {
   };
 }
 
-export function createInboxProcessor({ repository, knowledgeProvider } = {}) {
+export function createInboxProcessor({ repository, knowledgeProvider, workerId = DEFAULT_WORKER_ID, leaseSeconds = DEFAULT_LEASE_SECONDS } = {}) {
   if (!repository ||
       typeof repository.claimPendingInbound !== 'function' ||
       typeof repository.markInboundProcessed !== 'function' ||
@@ -25,10 +28,12 @@ export function createInboxProcessor({ repository, knowledgeProvider } = {}) {
     throw new Error('INBOX_PROCESSOR_REPOSITORY_REQUIRED');
   }
   if (typeof knowledgeProvider !== 'function') throw new Error('KNOWLEDGE_PROVIDER_REQUIRED');
+  if (!workerId || typeof workerId !== 'string') throw new Error('INBOX_WORKER_ID_REQUIRED');
+  if (!Number.isInteger(leaseSeconds) || leaseSeconds <= 0) throw new Error('INVALID_INBOX_LEASE_SECONDS');
 
   return Object.freeze({
     async processOne({ now = new Date().toISOString() } = {}) {
-      const row = await repository.claimPendingInbound();
+      const row = await repository.claimPendingInbound({ workerId, leaseSeconds });
       if (!row) return Object.freeze({ status: 'IDLE' });
 
       try {
@@ -61,16 +66,17 @@ export function createInboxProcessor({ repository, knowledgeProvider } = {}) {
             conversationId: outbound.conversation_id,
             replyToMessageId: outbound.reply_to_message_id,
             provider: outbound.provider,
-            payload: outbound
+            payload: outbound,
+            workerId
           });
           return Object.freeze({ status: 'QUEUED', inboxId: row.id, outboxId: queued?.id ?? null });
         }
 
-        await repository.markInboundProcessed(row.id);
+        await repository.markInboundProcessed(row.id, workerId);
         return Object.freeze({ status: result.status, inboxId: row.id, result });
       } catch (error) {
         try {
-          await repository.markInboundFailed(row.id, String(error?.message ?? error));
+          await repository.markInboundFailed(row.id, String(error?.message ?? error), workerId);
         } catch {
           // Preserve the original processor outcome so a recovery worker can inspect the record.
         }
