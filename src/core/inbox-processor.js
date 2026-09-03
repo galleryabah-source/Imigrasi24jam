@@ -14,7 +14,7 @@ function normalizeInboxMessage(row) {
 }
 
 export function createInboxProcessor({ repository, knowledgeProvider }) {
-  if (!repository || typeof repository.claimPendingInbound !== 'function' || typeof repository.markInboundProcessed !== 'function' || typeof repository.markInboundFailed !== 'function' || typeof repository.enqueueOutbound !== 'function') {
+  if (!repository || typeof repository.claimPendingInbound !== 'function' || typeof repository.markInboundProcessed !== 'function' || typeof repository.markInboundFailed !== 'function') {
     throw new Error('INBOX_PROCESSOR_REPOSITORY_REQUIRED');
   }
   if (typeof knowledgeProvider !== 'function') throw new Error('KNOWLEDGE_PROVIDER_REQUIRED');
@@ -43,20 +43,25 @@ export function createInboxProcessor({ repository, knowledgeProvider }) {
             text: result.text,
             attachments: result.safety?.attachments ?? []
           });
-          const queued = await repository.enqueueOutbound({
+          if (typeof repository.completeInboundWithOutbound !== 'function') throw new Error('ATOMIC_INBOX_OUTBOX_REQUIRED');
+          const queued = await repository.completeInboundWithOutbound({
+            inboxId: row.id,
             conversationId: outbound.conversation_id,
             replyToMessageId: outbound.reply_to_message_id,
             provider: outbound.provider,
             payload: outbound
           });
-          await repository.markInboundProcessed(row.id);
           return Object.freeze({ status: 'QUEUED', inboxId: row.id, outboxId: queued?.id ?? null });
         }
 
         await repository.markInboundProcessed(row.id);
         return Object.freeze({ status: result.status, inboxId: row.id, result });
       } catch (error) {
-        await repository.markInboundFailed(row.id, String(error?.message ?? error));
+        try {
+          await repository.markInboundFailed(row.id, String(error?.message ?? error));
+        } catch {
+          // Preserve the original processor outcome; recovery can inspect PROCESSING rows.
+        }
         return Object.freeze({ status: 'FAILED', inboxId: row.id, reason: 'PROCESSING_ERROR' });
       }
     }
