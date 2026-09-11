@@ -18,6 +18,28 @@ function conversationParams(conversation) {
     conversation.conversation_id];
 }
 
+async function persistConversation(tx, conversation, expectedConversationVersion) {
+  requireConversationVersion(expectedConversationVersion);
+  const saved = await tx.query(`
+    UPDATE conversations
+    SET user_id=$1, state=$2, scope=$3, intent=$4, sub_intent=$5,
+        pending_question=$6, turn_count=$7, version=version+1, updated_at=now()
+    WHERE conversation_key=$8 AND version=$9 RETURNING *
+  `, [...conversationParams(conversation), expectedConversationVersion]);
+  if (saved.rowCount !== 1) throw new Error('CONVERSATION_VERSION_CONFLICT');
+  return saved.rows[0];
+}
+
+async function markInboundProcessedInTransaction(tx, inboxId, workerId) {
+  const processed = await tx.query(`
+    UPDATE message_inbox
+    SET processing_status='PROCESSED', processed_at=now(), lease_owner=NULL, lease_expires_at=NULL
+    WHERE id=$1 AND processing_status='PROCESSING' AND lease_owner=$2 RETURNING id
+  `, [inboxId, workerId]);
+  if (processed.rowCount !== 1) throw new Error('INBOX_LEASE_LOST');
+  return processed.rows[0];
+}
+
 export function createInboxOutboxRepository(db) {
   if (!db || typeof db.query !== 'function') throw new Error('DATABASE_QUERY_REQUIRED');
 
@@ -59,22 +81,11 @@ export function createInboxOutboxRepository(db) {
 
     async completeInboundWithConversation({ inboxId, conversation, expectedConversationVersion, workerId }) {
       if (typeof db.transaction !== 'function') throw new Error('DATABASE_TRANSACTION_REQUIRED');
-      requireWorkerId(workerId); requireConversationVersion(expectedConversationVersion);
+      requireWorkerId(workerId);
       return db.transaction(async (tx) => {
-        const saved = await tx.query(`
-          UPDATE conversations
-          SET user_id=$1, state=$2, scope=$3, intent=$4, sub_intent=$5,
-              pending_question=$6, turn_count=$7, version=version+1, updated_at=now()
-          WHERE conversation_key=$8 AND version=$9 RETURNING *
-        `, [...conversationParams(conversation), expectedConversationVersion]);
-        if (saved.rowCount !== 1) throw new Error('CONVERSATION_VERSION_CONFLICT');
-        const processed = await tx.query(`
-          UPDATE message_inbox
-          SET processing_status='PROCESSED', processed_at=now(), lease_owner=NULL, lease_expires_at=NULL
-          WHERE id=$1 AND processing_status='PROCESSING' AND lease_owner=$2 RETURNING id
-        `, [inboxId, workerId]);
-        if (processed.rowCount !== 1) throw new Error('INBOX_LEASE_LOST');
-        return Object.freeze({ conversation: saved.rows[0], inboxId });
+        const saved = await persistConversation(tx, conversation, expectedConversationVersion);
+        await markInboundProcessedInTransaction(tx, inboxId, workerId);
+        return Object.freeze({ conversation: saved, inboxId });
       });
     },
 
@@ -83,22 +94,19 @@ export function createInboxOutboxRepository(db) {
       requireWorkerId(workerId);
       return db.transaction(async (tx) => {
         const outbox = await tx.query(`INSERT INTO message_outbox (conversation_id, reply_to_message_id, provider, payload_json) VALUES ($1,$2,$3,$4) RETURNING id, delivery_state`, [conversationId, replyToMessageId, provider, payload ?? {}]);
-        const processed = await tx.query(`UPDATE message_inbox SET processing_status='PROCESSED', processed_at=now(), lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND processing_status='PROCESSING' AND lease_owner=$2 RETURNING id`, [inboxId, workerId]);
-        if (processed.rowCount !== 1) throw new Error('INBOX_LEASE_LOST');
+        await markInboundProcessedInTransaction(tx, inboxId, workerId);
         return outbox.rows[0];
       });
     },
 
     async completeInboundWithOutboundAndConversation({ inboxId, conversation, expectedConversationVersion, conversationId, replyToMessageId, provider, payload, workerId }) {
       if (typeof db.transaction !== 'function') throw new Error('DATABASE_TRANSACTION_REQUIRED');
-      requireWorkerId(workerId); requireConversationVersion(expectedConversationVersion);
+      requireWorkerId(workerId);
       return db.transaction(async (tx) => {
-        const saved = await tx.query(`UPDATE conversations SET user_id=$1, state=$2, scope=$3, intent=$4, sub_intent=$5, pending_question=$6, turn_count=$7, version=version+1, updated_at=now() WHERE conversation_key=$8 AND version=$9 RETURNING *`, [...conversationParams(conversation), expectedConversationVersion]);
-        if (saved.rowCount !== 1) throw new Error('CONVERSATION_VERSION_CONFLICT');
+        const saved = await persistConversation(tx, conversation, expectedConversationVersion);
         const outbox = await tx.query(`INSERT INTO message_outbox (conversation_id, reply_to_message_id, provider, payload_json) VALUES ($1,$2,$3,$4) RETURNING id, delivery_state`, [conversationId, replyToMessageId, provider, payload ?? {}]);
-        const processed = await tx.query(`UPDATE message_inbox SET processing_status='PROCESSED', processed_at=now(), lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND processing_status='PROCESSING' AND lease_owner=$2 RETURNING id`, [inboxId, workerId]);
-        if (processed.rowCount !== 1) throw new Error('INBOX_LEASE_LOST');
-        return Object.freeze({ conversation: saved.rows[0], outbox: outbox.rows[0] });
+        await markInboundProcessedInTransaction(tx, inboxId, workerId);
+        return Object.freeze({ conversation: saved, outbox: outbox.rows[0] });
       });
     },
 
