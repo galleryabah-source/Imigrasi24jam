@@ -43,7 +43,9 @@ test('successful outbound ACK persists audit and SENT state in one transaction',
   const tx = {
     async query(sql, params) {
       queries.push({ sql, params });
-      if (sql.includes('INSERT INTO audit_events')) return { rowCount: 1, rows: [{ id: 'audit-1' }] };
+      if (sql.includes('pg_advisory_xact_lock')) return { rows: [] };
+      if (sql.includes('ORDER BY sequence_no DESC')) return { rows: [] };
+      if (sql.includes('INSERT INTO audit_events')) return { rowCount: 1, rows: [{ id: 'audit-1', sequence_no: 1, previous_hash: '0'.repeat(64), event_hash: 'h1' }] };
       if (sql.includes('UPDATE message_outbox')) return { rowCount: 1, rows: [{ id: auditEvent.subject_id }] };
       throw new Error('UNEXPECTED_QUERY');
     }
@@ -56,18 +58,22 @@ test('successful outbound ACK persists audit and SENT state in one transaction',
   const result = await repository.markOutboundSent(auditEvent.subject_id, 'P1', auditEvent);
 
   assert.deepEqual(result, { id: auditEvent.subject_id });
-  assert.equal(queries.length, 2);
-  assert.match(queries[0].sql, /INSERT INTO audit_events/);
-  assert.match(queries[1].sql, /UPDATE message_outbox SET delivery_state='SENT'/);
-  assert.equal(queries[0].params[1], 'ANSWER_SERVED');
-  assert.equal(queries[0].params[3], auditEvent.subject_id);
-  assert.equal(queries[1].params[1], 'P1');
+  assert.equal(queries.length, 4);
+  assert.match(queries[0].sql, /pg_advisory_xact_lock/);
+  assert.match(queries[1].sql, /ORDER BY sequence_no DESC/);
+  assert.match(queries[2].sql, /INSERT INTO audit_events/);
+  assert.match(queries[3].sql, /UPDATE message_outbox SET delivery_state='SENT'/);
+  assert.equal(queries[2].params[1], 'ANSWER_SERVED');
+  assert.equal(queries[2].params[3], auditEvent.subject_id);
+  assert.equal(queries[3].params[1], 'P1');
 });
 
 test('audit persistence failure prevents outbound state transition', async () => {
   let updateCalled = false;
   const tx = {
     async query(sql) {
+      if (sql.includes('pg_advisory_xact_lock')) return { rows: [] };
+      if (sql.includes('ORDER BY sequence_no DESC')) return { rows: [] };
       if (sql.includes('INSERT INTO audit_events')) throw new Error('AUDIT_DB_UNAVAILABLE');
       updateCalled = true;
       return { rowCount: 1, rows: [{ id: 'unexpected' }] };
