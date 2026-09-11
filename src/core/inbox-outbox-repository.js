@@ -12,13 +12,6 @@ function requireConversationVersion(version) {
   if (!Number.isInteger(version) || version < 0) throw new Error('CONVERSATION_VERSION_REQUIRED');
 }
 
-function requireAuditEvent(event) {
-  if (!event || typeof event !== 'object' || !event.event_type || !event.subject_type || !event.subject_id) {
-    throw new Error('AUDIT_EVENT_REQUIRED');
-  }
-  return event;
-}
-
 function conversationParams(conversation) {
   return [conversation.user_id ?? null, conversation.state, conversation.scope ?? null, conversation.intent ?? null,
     conversation.sub_intent ?? null, conversation.pending_question ?? null, conversation.turn_count ?? 0,
@@ -45,18 +38,6 @@ async function markInboundProcessedInTransaction(tx, inboxId, workerId) {
   `, [inboxId, workerId]);
   if (processed.rowCount !== 1) throw new Error('INBOX_LEASE_LOST');
   return processed.rows[0];
-}
-
-async function appendAuditEventInTransaction(tx, event) {
-  requireAuditEvent(event);
-  const result = await tx.query(`
-    INSERT INTO audit_events (actor_id, event_type, subject_type, subject_id, before_json, after_json, reason, created_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-    RETURNING id
-  `, [event.actor_id ?? null, event.event_type, event.subject_type, event.subject_id,
-    event.before_json ?? null, event.after_json ?? null, event.reason ?? null, event.created_at ?? new Date().toISOString()]);
-  if (result.rowCount !== 1) throw new Error('AUDIT_EVENT_PERSISTENCE_FAILED');
-  return result.rows[0];
 }
 
 export function createInboxOutboxRepository(db) {
@@ -118,14 +99,12 @@ export function createInboxOutboxRepository(db) {
       });
     },
 
-    async completeInboundWithOutboundAndConversation({ inboxId, conversation, expectedConversationVersion, conversationId, replyToMessageId, provider, payload, auditEvent, workerId }) {
+    async completeInboundWithOutboundAndConversation({ inboxId, conversation, expectedConversationVersion, conversationId, replyToMessageId, provider, payload, workerId }) {
       if (typeof db.transaction !== 'function') throw new Error('DATABASE_TRANSACTION_REQUIRED');
       requireWorkerId(workerId);
-      requireAuditEvent(auditEvent);
       return db.transaction(async (tx) => {
         const saved = await persistConversation(tx, conversation, expectedConversationVersion);
         const outbox = await tx.query(`INSERT INTO message_outbox (conversation_id, reply_to_message_id, provider, payload_json) VALUES ($1,$2,$3,$4) RETURNING id, delivery_state`, [conversationId, replyToMessageId, provider, payload ?? {}]);
-        await appendAuditEventInTransaction(tx, auditEvent);
         await markInboundProcessedInTransaction(tx, inboxId, workerId);
         return Object.freeze({ conversation: saved, outbox: outbox.rows[0] });
       });
