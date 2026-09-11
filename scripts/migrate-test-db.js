@@ -14,7 +14,8 @@ const migrations = [
   '0006_webhook_replay.sql',
   '0007_inbox_replay_indexes.sql',
   '0008_inbox_leases.sql',
-  '0009_conversations.sql'
+  '0009_conversations.sql',
+  '0010_audit_integrity.sql'
 ];
 
 const client = new Client({ connectionString: url });
