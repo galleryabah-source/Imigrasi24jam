@@ -14,6 +14,8 @@ export function createInboxProcessor({ repository, knowledgeProvider, conversati
   if (!repository || typeof repository.claimPendingInbound !== 'function' || typeof repository.markInboundProcessed !== 'function' || typeof repository.markInboundFailed !== 'function' || typeof repository.completeInboundWithOutbound !== 'function') throw new Error('INBOX_PROCESSOR_REPOSITORY_REQUIRED');
   if (typeof knowledgeProvider !== 'function') throw new Error('KNOWLEDGE_PROVIDER_REQUIRED');
   if (conversationRepository && typeof conversationRepository.getOrCreate !== 'function') throw new Error('CONVERSATION_REPOSITORY_REQUIRED');
+  if (conversationRepository && typeof repository.completeInboundWithConversation !== 'function') throw new Error('INBOX_CONVERSATION_ATOMIC_COMPLETION_REQUIRED');
+  if (conversationRepository && typeof repository.completeInboundWithOutboundAndConversation !== 'function') throw new Error('INBOX_ANSWER_CONVERSATION_ATOMIC_COMPLETION_REQUIRED');
   if (!workerId || typeof workerId !== 'string') throw new Error('INBOX_WORKER_ID_REQUIRED');
   if (!Number.isInteger(leaseSeconds) || leaseSeconds <= 0) throw new Error('INVALID_INBOX_LEASE_SECONDS');
 
@@ -34,18 +36,12 @@ export function createInboxProcessor({ repository, knowledgeProvider, conversati
 
         if (conversationRepository && result.state) {
           if (!Number.isInteger(expectedConversationVersion)) throw new Error('CONVERSATION_VERSION_REQUIRED');
-          if (result.status === 'ANSWER' && String(result.text ?? '').trim() && typeof repository.completeInboundWithOutboundAndConversation === 'function') {
+          if (result.status === 'ANSWER' && String(result.text ?? '').trim()) {
             const outbound = createOutboundMessage({ provider: message.provider, conversationId: message.conversationId, replyToMessageId: row.id, text: result.text, attachments: result.safety?.attachments ?? [] });
             const committed = await repository.completeInboundWithOutboundAndConversation({ inboxId: row.id, conversation: result.state, expectedConversationVersion, conversationId: outbound.conversation_id, replyToMessageId: outbound.reply_to_message_id, provider: outbound.provider, payload: outbound, workerId });
             return Object.freeze({ status: 'QUEUED', inboxId: row.id, outboxId: committed?.outbox?.id ?? null });
           }
-          if (typeof repository.completeInboundWithConversation === 'function') {
-            await repository.completeInboundWithConversation({ inboxId: row.id, conversation: result.state, expectedConversationVersion, workerId });
-          } else {
-            if (typeof conversationRepository.save !== 'function') throw new Error('CONVERSATION_REPOSITORY_SAVE_REQUIRED');
-            await conversationRepository.save({ conversation: result.state, expectedVersion: expectedConversationVersion });
-            await repository.markInboundProcessed(row.id, workerId);
-          }
+          await repository.completeInboundWithConversation({ inboxId: row.id, conversation: result.state, expectedConversationVersion, workerId });
           return Object.freeze({ status: result.status, inboxId: row.id, result });
         }
 
