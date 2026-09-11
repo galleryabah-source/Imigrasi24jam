@@ -9,19 +9,21 @@ test('retry uses bounded exponential-style schedule', () => {
   assert.equal(calculateRetry(5).terminal, true);
 });
 
-test('successful delivery marks sent and passes a stable idempotency key', async () => {
+test('successful delivery marks sent and passes a stable idempotency key and audit event', async () => {
   const calls = [];
   const worker = createOutboxWorker({
     repository: {
-      async claimPendingOutbound(){ return { id:'O1', attempt_count:0, payload_json:{ text:'ok' } }; },
-      async markOutboundSent(id, providerId){ calls.push(['sent',id,providerId]); },
+      async claimPendingOutbound(){ return { id:'O1', attempt_count:0, conversation_id:'C1', reply_to_message_id:'I1', payload_json:{ text:'ok' } }; },
+      async markOutboundSent(id, providerId, auditEvent){ calls.push(['sent',id,providerId,auditEvent]); },
       async scheduleOutboundRetry(){ calls.push(['retry']); }, async markOutboundFailed(){ calls.push(['failed']); }
     },
     provider: { async send(payload, options){ calls.push(['send', payload, options]); return { provider_message_id:'P1' }; } }
   });
   assert.deepEqual(await worker.processOne(), { status:'SENT', id:'O1' });
   assert.equal(calls[0][0], 'send'); assert.equal(calls[0][2].idempotency_key, 'imigrasi24jam:outbox:O1');
-  assert.deepEqual(calls[1], ['sent','O1','P1']);
+  assert.equal(calls[1][0], 'sent'); assert.equal(calls[1][1], 'O1'); assert.equal(calls[1][2], 'P1');
+  assert.equal(calls[1][3].event_type, 'ANSWER_SERVED'); assert.equal(calls[1][3].subject_type, 'MESSAGE_OUTBOX'); assert.equal(calls[1][3].subject_id, 'O1');
+  assert.deepEqual(calls[1][3].after_json, { delivery_state:'SENT', provider_message_id:'P1', conversation_id:'C1', reply_to_message_id:'I1' });
 });
 
 test('provider failure schedules retry without rerunning core', async () => {
