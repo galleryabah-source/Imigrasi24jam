@@ -3,6 +3,14 @@
  * No provider credentials or vendor-specific business logic belong here.
  */
 
+function requireIdempotencyKey(message) {
+  const key = message?.options?.idempotency_key;
+  if (typeof key !== 'string' || key.length < 1 || key.length > 200) {
+    throw new Error('WHATSAPP_IDEMPOTENCY_KEY_REQUIRED');
+  }
+  return key;
+}
+
 export function createWhatsAppProviderContract(adapter) {
   const required = ['verifyWebhook', 'parseInbound', 'sendText', 'sendAttachment', 'parseDeliveryStatus'];
   for (const method of required) {
@@ -19,9 +27,11 @@ export function createWhatsAppProviderContract(adapter) {
       return adapter.parseInbound(request);
     },
     async sendText(message) {
+      requireIdempotencyKey(message);
       return adapter.sendText(message);
     },
     async sendAttachment(message) {
+      requireIdempotencyKey(message);
       return adapter.sendAttachment(message);
     },
     async parseDeliveryStatus(request) {
