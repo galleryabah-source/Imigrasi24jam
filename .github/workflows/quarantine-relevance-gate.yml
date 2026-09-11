@@ -1,9 +1,7 @@
-name: Imigrasi24jam Quarantine Relevance Gate
+name: Imigrasi24jam Quarantine Relevance Gate (manual)
 
 on:
-  push:
-    branches: [main, 'phase0-*', 'hardening/*']
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   quarantine-relevance-gate:
