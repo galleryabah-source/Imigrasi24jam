@@ -11,15 +11,16 @@ function getInboxTransaction() {
   const db = createPostgresAdapter();
   const repository = createInboxOutboxRepository(db);
   inboxTransaction = Object.freeze({
-    ingest: async ({ provider, providerMessageId, conversationId, sender, payload }) => {
-      const row = await repository.claimInbound({
+    ingest: async ({ provider, providerMessageId, conversationId, sender, payload, replayKey }) => {
+      const result = await repository.claimInboundWithReplay({
         provider,
         providerMessageId,
         conversationId,
         sender,
-        payload
+        payload,
+        replayKey
       });
-      return { accepted: Boolean(row), inboxId: row?.id ?? null };
+      return result;
     }
   });
   return inboxTransaction;
@@ -46,6 +47,12 @@ function readBody(req, maxBytes = MAX_WEBHOOK_BODY_BYTES) {
     });
     req.on('error', reject);
   });
+}
+
+function safeWebhookError(error) {
+  const code = typeof error?.code === 'string' ? error.code : 'WEBHOOK_PROCESSING_ERROR';
+  const message = typeof error?.message === 'string' ? error.message.slice(0, 200) : 'webhook processing failed';
+  return `${code}: ${message}`;
 }
 
 export default async function handler(req, res) {
@@ -79,7 +86,7 @@ export default async function handler(req, res) {
     });
     return res.status(result.status).json(result);
   } catch (error) {
-    console.error('whatsapp_webhook_failed', error);
+    console.error('whatsapp_webhook_failed', safeWebhookError(error));
     return res.status(500).json({ error: 'webhook_processing_failed' });
   }
 }
