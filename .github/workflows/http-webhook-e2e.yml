@@ -1,9 +1,7 @@
-name: Imigrasi24jam HTTP Webhook E2E
+name: Imigrasi24jam HTTP Webhook E2E (manual)
 
 on:
-  push:
-    branches: [main, 'phase0-*', 'hardening/*']
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   http-webhook-e2e:
