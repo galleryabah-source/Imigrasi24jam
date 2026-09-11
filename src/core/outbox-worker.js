@@ -1,3 +1,5 @@
+import { AUDIT_EVENTS, createAuditEvent } from './audit-contract.js';
+
 export const RETRY_DELAYS_SECONDS = Object.freeze([30, 120, 600, 1800, 3600]);
 export const DEFAULT_PROVIDER_TIMEOUT_MS = 15000;
 
@@ -74,7 +76,19 @@ export function createOutboxWorker({ repository, provider, providerTimeoutMs = D
       }
 
       try {
-        await repository.markOutboundSent(job.id, providerResult.provider_message_id);
+        const auditEvent = createAuditEvent({
+          eventType: AUDIT_EVENTS.ANSWER_SERVED,
+          subjectType: 'MESSAGE_OUTBOX',
+          subjectId: job.id,
+          after: {
+            delivery_state: 'SENT',
+            provider_message_id: providerResult.provider_message_id,
+            conversation_id: job.conversation_id ?? null,
+            reply_to_message_id: job.reply_to_message_id ?? null
+          },
+          reason: 'Provider accepted outbound answer'
+        });
+        await repository.markOutboundSent(job.id, providerResult.provider_message_id, auditEvent);
         return Object.freeze({ status: 'SENT', id: job.id });
       } catch (error) {
         const message = `ACK_PERSISTENCE_FAILED:${errorMessage(error)}`;
