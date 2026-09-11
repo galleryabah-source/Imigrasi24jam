@@ -1,0 +1,187 @@
+name: Imigrasi24jam Unified CI Gate
+
+on:
+  push:
+    branches: [main, 'phase0-*', 'hardening/*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: imigrasi24jam-unified-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  unified-gate:
+    name: unified-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: imigrasi
+          POSTGRES_PASSWORD: imigrasi
+          POSTGRES_DB: imigrasi24jam_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U imigrasi -d imigrasi24jam_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://imigrasi:imigrasi@localhost:5432/imigrasi24jam_test
+      CI: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Runtime diagnostics
+        run: |
+          node --version
+          npm --version
+          uname -a
+          git --version
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Syntax and static contract gate
+        run: npm run check
+
+      - name: Unit and regression tests
+        run: npm test
+
+      - name: Verify migration set
+        run: npm run verify:migrations
+
+      - name: Apply migrations to disposable CI PostgreSQL only
+        run: npm run migrate:test
+
+      - name: Verify migrated schema
+        run: node --test tests/migration-schema.test.js
+
+      - name: PostgreSQL integration gate
+        run: npm run test:db
+
+      - name: HTTP webhook E2E
+        run: node --test tests/http-webhook.e2e.test.js tests/security-webhook.e2e.test.js
+
+      - name: Quarantine and relevance gate
+        run: node --test tests/quarantine-relevance-gate.test.js
+
+      - name: WhatsApp attachment preview gate
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import crypto from 'node:crypto';
+          import http from 'node:http';
+          import { createWebhookSecurityGate } from './src/integrations/whatsapp/webhook-security.js';
+          import { processWhatsAppWebhook } from './src/integrations/whatsapp/webhook-pipeline.js';
+          import { evaluatePublicWhatsAppAttachment } from './src/integrations/whatsapp/quarantine-relevance-gate.js';
+          import { createOutboundMessage } from './src/core/message-delivery.js';
+
+          const secret = 'whatsapp-preview-ci-secret';
+          const securityGate = createWebhookSecurityGate({ secret });
+          const inbox = [];
+          const outbound = [];
+          const tx = {
+            async ingest(message) {
+              if (inbox.some((item) => item.providerMessageId === message.providerMessageId)) {
+                return { accepted: false, inboxId: null };
+              }
+              inbox.push(message);
+              return { accepted: true, inboxId: `preview-${inbox.length}` };
+            }
+          };
+          const server = http.createServer(async (req, res) => {
+            const chunks = [];
+            for await (const chunk of req) chunks.push(chunk);
+            const rawBody = Buffer.concat(chunks).toString('utf8');
+            const result = await processWhatsAppWebhook({
+              rawBody,
+              signature: req.headers['x-signature'],
+              timestampSeconds: req.headers['x-timestamp'],
+              securityGate,
+              inboxTransaction: tx
+            });
+            res.writeHead(result.status, { 'content-type': 'application/json' });
+            res.end(JSON.stringify(result));
+          });
+          await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+          const { port } = server.address();
+          const url = `http://127.0.0.1:${port}`;
+          const post = (body, timestamp) => fetch(url, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              'x-signature': `sha256=${crypto.createHmac('sha256', secret).update(body).digest('hex')}`,
+              'x-timestamp': String(timestamp)
+            },
+            body
+          });
+          try {
+            const message = JSON.stringify({
+              id: 'wamid-preview-ci-1',
+              from: 'preview-user-1',
+              type: 'document',
+              text: 'persyaratan paspor baru',
+              attachment: { documentId: 'doc-public-paspor-1' }
+            });
+            const timestamp = Math.floor(Date.now() / 1000);
+            const response = await post(message, timestamp);
+            const payload = await response.json();
+            assert.equal(response.status, 200);
+            assert.equal(payload.accepted, true);
+            assert.equal(inbox.length, 1);
+            const gate = evaluatePublicWhatsAppAttachment({
+              document: {
+                accessClassification: 'PUBLIC',
+                status: 'PUBLISHED',
+                allowWhatsAppAttachment: true,
+                title: 'Persyaratan paspor baru',
+                description: 'Dokumen resmi layanan paspor Imigrasi',
+                topic: 'Paspor'
+              },
+              context: inbox[0].payload.text
+            });
+            assert.deepEqual(gate, { decision: 'ADMIT', reason: 'PUBLIC_APPROVED_RELEVANT' });
+            const preview = createOutboundMessage({
+              conversationId: inbox[0].conversationId,
+              replyToMessageId: inbox[0].providerMessageId,
+              text: 'Dokumen publik yang relevan lulus verifikasi dan siap dipratinjau untuk WhatsApp.',
+              attachments: [{ documentId: 'doc-public-paspor-1' }]
+            });
+            outbound.push(preview);
+            assert.equal(outbound[0].delivery_state, 'PENDING');
+            const duplicate = await post(message, timestamp + 1);
+            const duplicatePayload = await duplicate.json();
+            assert.equal(duplicate.status, 200);
+            assert.equal(duplicatePayload.duplicate, true);
+            assert.equal(inbox.length, 1);
+            assert.equal(outbound.length, 1);
+            const blocked = evaluatePublicWhatsAppAttachment({
+              document: {
+                accessClassification: 'PRIVATE / INTERNAL',
+                status: 'PUBLISHED',
+                allowWhatsAppAttachment: true,
+                title: 'Dokumen internal',
+                description: 'Dokumen internal keimigrasian',
+                topic: 'Imigrasi'
+              },
+              context: 'dokumen internal'
+            });
+            assert.deepEqual(blocked, { decision: 'QUARANTINE', reason: 'NON_PUBLIC_ACCESS' });
+          } finally {
+            server.close();
+          }
+          NODE
