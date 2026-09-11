@@ -1,9 +1,7 @@
-name: Imigrasi24jam Core
+name: Imigrasi24jam Core (manual)
 
 on:
-  push:
-    branches: [main, 'phase0-*', 'hardening/*']
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   core:
