@@ -7,7 +7,7 @@ on:
 
 jobs:
   quarantine-relevance-gate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
         run: node --test tests/quarantine-relevance-gate.test.js
 
   whatsapp-e2e-preview:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
