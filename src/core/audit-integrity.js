@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 
 export const GENESIS_HASH = '0'.repeat(64);
 export const GLOBAL_AUDIT_LOCK_KEY = 84172431;
@@ -10,8 +10,9 @@ function canonicalize(value) {
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(value[key])}`).join(',')}}`;
 }
 
-export function canonicalAuditMaterial(event, sequenceNo, previousHash) {
+export function canonicalAuditMaterial(event, sequenceNo, previousHash, eventId = event.id ?? null) {
   return canonicalize({
+    event_id: eventId,
     sequence_no: sequenceNo,
     previous_hash: previousHash,
     actor_id: event.actor_id ?? null,
@@ -45,13 +46,14 @@ export async function appendAuditEventInTransaction(tx, event) {
   if (!/^[0-9a-f]{64}$/.test(previousHash)) throw new Error('AUDIT_PREVIOUS_HASH_INVALID');
   const createdAt = event.created_at instanceof Date ? event.created_at.toISOString() : (event.created_at ?? new Date().toISOString());
   const normalized = { ...event, created_at: createdAt };
-  const eventHash = hashAuditMaterial(canonicalAuditMaterial(normalized, sequenceNo, previousHash));
+  const eventId = normalized.id ?? randomUUID();
+  const eventHash = hashAuditMaterial(canonicalAuditMaterial(normalized, sequenceNo, previousHash, eventId));
   const result = await tx.query(`
     INSERT INTO audit_events
-      (actor_id, event_type, subject_type, subject_id, before_json, after_json, reason, created_at, sequence_no, previous_hash, event_hash)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      (id, actor_id, event_type, subject_type, subject_id, before_json, after_json, reason, created_at, sequence_no, previous_hash, event_hash)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
     RETURNING id, sequence_no, previous_hash, event_hash
-  `, [normalized.actor_id ?? null, normalized.event_type, normalized.subject_type, normalized.subject_id,
+  `, [eventId, normalized.actor_id ?? null, normalized.event_type, normalized.subject_type, normalized.subject_id,
     normalized.before_json ?? null, normalized.after_json ?? null, normalized.reason ?? null, normalized.created_at,
     sequenceNo, previousHash, eventHash]);
   if (result.rowCount !== 1) throw new Error('AUDIT_EVENT_PERSISTENCE_FAILED');
@@ -74,7 +76,7 @@ export async function verifyAuditChain(db) {
   for (const row of result.rows) {
     if (Number(row.sequence_no) !== expectedSequence) return Object.freeze({ intact: false, reason: 'SEQUENCE_GAP', at: row.id });
     if (row.previous_hash !== previousHash) return Object.freeze({ intact: false, reason: 'PREVIOUS_HASH_MISMATCH', at: row.id });
-    const expectedHash = hashAuditMaterial(canonicalAuditMaterial(row, expectedSequence, previousHash));
+    const expectedHash = hashAuditMaterial(canonicalAuditMaterial(row, expectedSequence, previousHash, row.id));
     if (row.event_hash !== expectedHash) return Object.freeze({ intact: false, reason: 'EVENT_HASH_MISMATCH', at: row.id });
     previousHash = row.event_hash;
     expectedSequence += 1;
