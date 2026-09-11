@@ -4,14 +4,16 @@ import { createConversationRepository } from './conversation-repository.js';
 import { createInboxProcessor } from './inbox-processor.js';
 import { createOutboxWorker } from './outbox-worker.js';
 import { createApplication } from './application-service.js';
+import { createPostgresKnowledgeProvider } from './postgres-knowledge-provider.js';
 
 function requireFunction(value, code) {
   if (typeof value !== 'function') throw new Error(code);
 }
 
-export function createRuntimeComposition({ db, knowledgeProvider, whatsappProvider, workerId, inboxLeaseSeconds = 60, outboxLeaseSeconds = 60, outboundTimeoutMs = 15000 } = {}) {
+export function createRuntimeComposition({ db, knowledgeProvider = null, whatsappProvider, workerId, inboxLeaseSeconds = 60, outboxLeaseSeconds = 60, outboundTimeoutMs = 15000 } = {}) {
   if (!db || typeof db.query !== 'function' || typeof db.transaction !== 'function') throw new Error('RUNTIME_DATABASE_REQUIRED');
-  requireFunction(knowledgeProvider, 'RUNTIME_KNOWLEDGE_PROVIDER_REQUIRED');
+  const resolvedKnowledgeProvider = knowledgeProvider ?? createPostgresKnowledgeProvider(db, { publicOnly: true });
+  requireFunction(resolvedKnowledgeProvider, 'RUNTIME_KNOWLEDGE_PROVIDER_REQUIRED');
   if (!whatsappProvider || typeof whatsappProvider.sendText !== 'function' || typeof whatsappProvider.sendAttachment !== 'function') {
     throw new Error('RUNTIME_WHATSAPP_PROVIDER_REQUIRED');
   }
@@ -20,7 +22,7 @@ export function createRuntimeComposition({ db, knowledgeProvider, whatsappProvid
   const inboxRepository = createInboxOutboxRepository(db);
   const conversationRepository = createConversationRepository(db);
   const outboxRepository = createOutboxLeaseRepository(db, { workerId, leaseSeconds: outboxLeaseSeconds });
-  const inboxProcessor = createInboxProcessor({ repository: inboxRepository, conversationRepository, knowledgeProvider, workerId, leaseSeconds: inboxLeaseSeconds });
+  const inboxProcessor = createInboxProcessor({ repository: inboxRepository, conversationRepository, knowledgeProvider: resolvedKnowledgeProvider, workerId, leaseSeconds: inboxLeaseSeconds });
   const outboxWorker = createOutboxWorker({
     repository: outboxRepository,
     provider: {
@@ -35,7 +37,7 @@ export function createRuntimeComposition({ db, knowledgeProvider, whatsappProvid
     }
   });
 
-  return Object.freeze({ db, inboxRepository, outboxRepository, conversationRepository, inboxProcessor, outboxWorker, application: createApplication({ inboxProcessor, outboxWorker }) });
+  return Object.freeze({ db, knowledgeProvider: resolvedKnowledgeProvider, inboxRepository, outboxRepository, conversationRepository, inboxProcessor, outboxWorker, application: createApplication({ inboxProcessor, outboxWorker }) });
 }
 
 async function withTimeout(promise, timeoutMs) {
