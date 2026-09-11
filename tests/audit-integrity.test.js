@@ -13,9 +13,9 @@ const event = Object.freeze({
   created_at: '2026-09-11T00:00:00.000Z'
 });
 
-test('canonical audit material is key-order independent', () => {
+test('canonical audit material is key-order independent and Date-safe', () => {
   const a = canonicalAuditMaterial(event, 1, '0'.repeat(64));
-  const b = canonicalAuditMaterial({ ...event, after_json: { provider_message_id: 'P1', delivery_state: 'SENT' } }, 1, '0'.repeat(64));
+  const b = canonicalAuditMaterial({ ...event, after_json: { provider_message_id: 'P1', delivery_state: 'SENT' }, created_at: new Date(event.created_at) }, 1, '0'.repeat(64));
   assert.equal(a, b);
   assert.match(hashAuditMaterial(a), /^[0-9a-f]{64}$/);
 });
