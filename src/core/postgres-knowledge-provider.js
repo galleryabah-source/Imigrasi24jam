@@ -2,7 +2,7 @@ import { resolveIntent } from './intent-registry.js';
 
 const PUBLIC_DOCUMENT = 'PUBLIC';
 
-function effectiveWindow(alias, now) {
+function effectiveWindow(alias) {
   return `(${alias}.effective_from IS NULL OR ${alias}.effective_from <= $2::timestamptz)
     AND (${alias}.effective_until IS NULL OR $2::timestamptz < ${alias}.effective_until)`;
 }
@@ -48,7 +48,7 @@ export function createPostgresKnowledgeProvider(db, { publicOnly = true } = {}) 
         FROM answer_versions av
         WHERE av.knowledge_item_id = ki.id
           AND av.status = 'PUBLISHED'
-          AND ${effectiveWindow('av', 'now')}
+          AND ${effectiveWindow('av')}
         ORDER BY av.version_number DESC
         LIMIT 1
       ) av ON true
@@ -79,9 +79,13 @@ export function createPostgresKnowledgeProvider(db, { publicOnly = true } = {}) 
           AND ei.status = 'VERIFIED'
           ${visibilityPredicate}
       ) ev ON true
-      LEFT JOIN knowledge_sources ks ON ks.id = COALESCE(av.source_id, ki.source_id) AND ks.status = 'ACTIVE'
+      JOIN knowledge_sources ks
+        ON ks.id = COALESCE(av.source_id, ki.source_id)
+       AND ks.status = 'ACTIVE'
+       AND (ks.effective_from IS NULL OR ks.effective_from <= $2::timestamptz)
+       AND (ks.effective_until IS NULL OR $2::timestamptz < ks.effective_until)
       WHERE ki.status = 'PUBLISHED'
-        AND ${effectiveWindow('ki', 'now')}
+        AND ${effectiveWindow('ki')}
         AND i.code = $1
         AND av.answer_text IS NOT NULL
         AND av.answer_text <> ''
