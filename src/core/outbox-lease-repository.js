@@ -1,3 +1,22 @@
+function requireAuditEvent(event) {
+  if (!event || typeof event !== 'object' || !event.event_type || !event.subject_type || !event.subject_id) {
+    throw new Error('AUDIT_EVENT_REQUIRED');
+  }
+  return event;
+}
+
+async function appendAuditEvent(tx, event) {
+  requireAuditEvent(event);
+  const result = await tx.query(`
+    INSERT INTO audit_events (actor_id, event_type, subject_type, subject_id, before_json, after_json, reason, created_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    RETURNING id
+  `, [event.actor_id ?? null, event.event_type, event.subject_type, event.subject_id,
+    event.before_json ?? null, event.after_json ?? null, event.reason ?? null, event.created_at ?? new Date().toISOString()]);
+  if (result.rowCount !== 1) throw new Error('AUDIT_EVENT_PERSISTENCE_FAILED');
+  return result.rows[0];
+}
+
 export function createOutboxLeaseRepository(db, { workerId, leaseSeconds = 60 } = {}) {
   if (!db || typeof db.query !== 'function') throw new Error('DATABASE_QUERY_REQUIRED');
   if (!workerId) throw new Error('WORKER_ID_REQUIRED');
@@ -28,7 +47,17 @@ export function createOutboxLeaseRepository(db, { workerId, leaseSeconds = 60 } 
       return result.rows[0] ?? null;
     },
 
-    async markOutboundSent(id, providerMessageId = null) {
+    async markOutboundSent(id, providerMessageId = null, auditEvent = null) {
+      if (auditEvent) {
+        requireAuditEvent(auditEvent);
+        if (typeof db.transaction !== 'function') throw new Error('DATABASE_TRANSACTION_REQUIRED');
+        return db.transaction(async (tx) => {
+          await appendAuditEvent(tx, auditEvent);
+          const result = await tx.query(`UPDATE message_outbox SET delivery_state='SENT', provider_message_id=$2, sent_at=now(), lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$3 RETURNING id`, [id, providerMessageId, workerId]);
+          if (result.rowCount !== 1) throw new Error('OUTBOX_LEASE_LOST');
+          return result.rows[0];
+        });
+      }
       const result = await db.query(`UPDATE message_outbox SET delivery_state='SENT', provider_message_id=$2, sent_at=now(), lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$3 RETURNING id`, [id, providerMessageId, workerId]);
       if (result.rowCount !== 1) throw new Error('OUTBOX_LEASE_LOST');
       return result.rows[0];
