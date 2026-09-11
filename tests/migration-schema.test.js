@@ -24,6 +24,9 @@ test('complete migration schema gate', { skip: !url }, async () => {
 
     const conversation = await client.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='conversations' AND column_name = ANY($1::text[])`, [['conversation_key','state','turn_count','version','updated_at']]);
     assert.deepEqual(new Set(conversation.rows.map(r => r.column_name)), new Set(['conversation_key','state','turn_count','version','updated_at']));
+
+    const auditIntegrity = await client.query(`SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='audit_events' AND column_name = ANY($1::text[])`, [['sequence_no','previous_hash','event_hash']]);
+    assert.deepEqual(new Set(auditIntegrity.rows.map(r => r.column_name)), new Set(['sequence_no','previous_hash','event_hash']));
   } finally {
     await client.end();
   }
