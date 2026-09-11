@@ -52,6 +52,13 @@ test('real PostgreSQL webhook admission is atomic across inbox and replay', { sk
     assert.equal(winner?.inboxId ? 1 : 0, 1);
   } finally {
     await Promise.all(clients.map((client) => client.end()));
+    const cleanupAfter = await connect();
+    try {
+      await cleanupAfter.query('DELETE FROM message_inbox WHERE provider = $1 AND provider_message_id = ANY($2)', ['whatsapp', providerMessageIds]);
+      await cleanupAfter.query('DELETE FROM webhook_replay WHERE key_hash = $1', [replayHash]);
+    } finally {
+      await cleanupAfter.end();
+    }
   }
 });
 
