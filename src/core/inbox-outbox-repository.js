@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 function requireWorkerId(workerId) {
   if (!workerId || typeof workerId !== 'string') throw new Error('INBOX_WORKER_ID_REQUIRED');
   return workerId;
@@ -6,6 +8,11 @@ function requireWorkerId(workerId) {
 function requireLeaseSeconds(leaseSeconds) {
   if (!Number.isInteger(leaseSeconds) || leaseSeconds <= 0) throw new Error('INVALID_INBOX_LEASE_SECONDS');
   return leaseSeconds;
+}
+
+function requireReplayTtlSeconds(ttlSeconds) {
+  if (!Number.isInteger(ttlSeconds) || ttlSeconds <= 0 || ttlSeconds > 86400) throw new Error('INVALID_REPLAY_TTL_SECONDS');
+  return ttlSeconds;
 }
 
 function requireConversationVersion(version) {
@@ -40,6 +47,16 @@ async function markInboundProcessedInTransaction(tx, inboxId, workerId) {
   return processed.rows[0];
 }
 
+function normalizeReplayKey(replayKey) {
+  const key = String(replayKey ?? '').trim();
+  if (!key) throw new Error('REPLAY_KEY_REQUIRED');
+  return key;
+}
+
+function replayKeyHash(replayKey) {
+  return createHash('sha256').update(normalizeReplayKey(replayKey), 'utf8').digest('hex');
+}
+
 export function createInboxOutboxRepository(db) {
   if (!db || typeof db.query !== 'function') throw new Error('DATABASE_QUERY_REQUIRED');
 
@@ -52,6 +69,37 @@ export function createInboxOutboxRepository(db) {
         RETURNING id, processing_status
       `, [provider, providerMessageId, conversationId, sender, payload ?? {}]);
       return result.rows[0] ?? null;
+    },
+
+    async claimInboundWithReplay({ provider, providerMessageId, conversationId, sender, payload, replayKey, ttlSeconds = 300 }) {
+      if (typeof db.transaction !== 'function') throw new Error('DATABASE_TRANSACTION_REQUIRED');
+      const keyHash = replayKeyHash(replayKey);
+      requireReplayTtlSeconds(ttlSeconds);
+
+      return db.transaction(async (tx) => {
+        const inbox = await tx.query(`
+          INSERT INTO message_inbox (provider, provider_message_id, conversation_id, sender, payload_json)
+          VALUES ($1,$2,$3,$4,$5)
+          ON CONFLICT (provider, provider_message_id) DO NOTHING
+          RETURNING id, processing_status
+        `, [provider, providerMessageId, conversationId, sender, payload ?? {}]);
+
+        if (inbox.rowCount !== 1) {
+          return Object.freeze({ accepted: false, inboxId: null, reason: 'DUPLICATE_INBOX' });
+        }
+
+        const replay = await tx.query(`
+          INSERT INTO webhook_replay (key_hash, expires_at)
+          VALUES ($1, now() + ($2 * interval '1 second'))
+          ON CONFLICT (key_hash) DO UPDATE
+            SET expires_at=EXCLUDED.expires_at
+          WHERE webhook_replay.expires_at <= now()
+          RETURNING key_hash
+        `, [keyHash, ttlSeconds]);
+
+        if (replay.rowCount !== 1) throw new Error('WEBHOOK_REPLAY_REJECTED');
+        return Object.freeze({ accepted: true, inboxId: inbox.rows[0].id, reason: 'ADMITTED' });
+      });
     },
 
     async claimPendingInbound({ workerId, leaseSeconds = 60 } = {}) {
