@@ -30,7 +30,9 @@ test('real postgres serializes concurrent audit appends into one valid chain', {
   assert.ok(first.sequence_no);
   assert.ok(second.sequence_no);
   assert.notEqual(first.sequence_no, second.sequence_no);
-  assert.equal(second.previous_hash, first.event_hash) || assert.equal(first.previous_hash, second.event_hash);
+  const ordered = [first, second].sort((a, b) => Number(a.sequence_no) - Number(b.sequence_no));
+  assert.equal(ordered[0].previous_hash, '0'.repeat(64));
+  assert.equal(ordered[1].previous_hash, ordered[0].event_hash);
 
   const verified = await verifyAuditChain(adapter);
   assert.equal(verified.intact, true);
