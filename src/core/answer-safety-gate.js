@@ -1,9 +1,11 @@
 export function evaluateAnswerSafety({ intent, answer, sources = [], confidence = 0, providerAvailable = false, knowledge = null, attachments = [] }) {
   const reasons = [];
+  const verifiedSources = sources.filter((source) => source?.status === 'VERIFIED');
+
   if (!intent) reasons.push('NO_IMMIGRATION_INTENT');
   if (!String(answer ?? '').trim()) reasons.push('EMPTY_ANSWER');
   if (confidence < 0.7) reasons.push('LOW_CONFIDENCE');
-  if (!sources.length) reasons.push('NO_VERIFIED_SOURCE');
+  if (!verifiedSources.length) reasons.push('NO_VERIFIED_SOURCE');
   if (String(intent).startsWith('OUT_OF_SCOPE')) reasons.push('OUT_OF_SCOPE');
   if (knowledge && knowledge.status !== 'PUBLISHED') reasons.push('KNOWLEDGE_NOT_PUBLISHED');
 
