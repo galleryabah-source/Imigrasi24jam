@@ -50,6 +50,29 @@ test('inbox processor persists durable conversation and inbox completion atomica
   assert.equal(calls[0].expectedConversationVersion, 4); assert.equal(calls[0].conversation.state, 'ESCALATION');
 });
 
+test('inbox processor exposes a controlled conflict outcome when conversation version changes concurrently', async () => {
+  let failedId = null;
+  const repository = {
+    async claimPendingInbound() { return { id: 'inbox-concurrent-1', provider: 'whatsapp', provider_message_id: 'wamid-concurrent-1', conversation_id: '628199', sender: '628199', payload_json: { text: 'persyaratan paspor' }, received_at: new Date().toISOString() }; },
+    async completeInboundWithOutboundAndConversation() { throw new Error('CONVERSATION_VERSION_CONFLICT'); },
+    async completeInboundWithConversation() { throw new Error('CONVERSATION_VERSION_CONFLICT'); },
+    async markInboundProcessed() { throw new Error('must not bypass optimistic locking'); },
+    async markInboundFailed(id) { failedId = id; },
+    async completeInboundWithOutbound() { throw new Error('must not bypass optimistic locking'); }
+  };
+  const conversationRepository = {
+    async getOrCreate() {
+      return { conversation_id: '628199', user_id: null, state: 'NEW', scope: null, intent: null, sub_intent: null, pending_question: null, turn_count: 0, version: 7 };
+    }
+  };
+  const processor = createInboxProcessor({ repository, conversationRepository, knowledgeProvider: async () => answerKnowledge() });
+  const result = await processor.processOne({ now: '2026-09-03T00:00:00.000Z' });
+  assert.equal(result.status, 'FAILED');
+  assert.equal(result.reason, 'PROCESSING_ERROR');
+  assert.equal(result.inboxId, 'inbox-concurrent-1');
+  assert.equal(failedId, 'inbox-concurrent-1');
+});
+
 test('inbox processor never fabricates an answer when retrieval is unavailable', async () => {
   const repository = {
     async claimPendingInbound() { return { id: 'inbox-2', provider: 'whatsapp', provider_message_id: 'wamid-2', conversation_id: '628124', sender: '628124', payload_json: { text: 'persyaratan paspor' }, received_at: new Date().toISOString() }; },
