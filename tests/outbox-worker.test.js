@@ -9,6 +9,15 @@ test('retry uses bounded exponential-style schedule', () => {
   assert.equal(calculateRetry(5).terminal, true);
 });
 
+test('outbox worker rejects a lease that is not longer than provider timeout', () => {
+  const repository = {
+    async claimPendingOutbound(){ throw new Error('claim must not run'); },
+    async markOutboundSent(){}, async scheduleOutboundRetry(){}, async markOutboundFailed(){}
+  };
+  assert.throws(() => createOutboxWorker({ repository, provider:{ async send(){} }, providerTimeoutMs:30000, leaseSeconds:30 }), /OUTBOX_LEASE_MUST_EXCEED_PROVIDER_TIMEOUT/);
+  assert.throws(() => createOutboxWorker({ repository, provider:{ async send(){} }, providerTimeoutMs:30000, leaseSeconds:29 }), /INVALID_OUTBOX_LEASE_SECONDS/);
+});
+
 test('successful delivery marks sent and passes a stable idempotency key and audit event', async () => {
   const calls = [];
   const worker = createOutboxWorker({
