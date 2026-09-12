@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createOutboxLeaseRepository } from '../src/core/outbox-lease-repository.js';
+import { createOutboxLeaseRepository, MIN_OUTBOX_LEASE_SECONDS } from '../src/core/outbox-lease-repository.js';
 
 const auditEvent = {
   event_type: 'ANSWER_SERVED',
@@ -20,6 +20,17 @@ test('claim query uses SKIP LOCKED and worker lease', async () => {
   assert.equal(job.id, 'O1');
   assert.match(sql, /FOR UPDATE SKIP LOCKED/);
   assert.match(sql, /lease_expires_at/);
+});
+
+test('lease shorter than the safety floor is rejected before any database work', () => {
+  const db = { async query() { throw new Error('DB_MUST_NOT_BE_CALLED'); } };
+  assert.throws(() => createOutboxLeaseRepository(db, { workerId:'W1', leaseSeconds:MIN_OUTBOX_LEASE_SECONDS - 1 }), /INVALID_LEASE_SECONDS/);
+});
+
+test('default lease remains above the provider timeout safety boundary', () => {
+  const db = { async query() { return { rows: [] }; } };
+  const repo = createOutboxLeaseRepository(db, { workerId:'W1' });
+  assert.ok(repo);
 });
 
 test('worker cannot finalize a job it does not own', async () => {
