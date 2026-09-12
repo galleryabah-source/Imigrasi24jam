@@ -88,7 +88,7 @@ test('attachment is revalidated immediately before provider send', async () => {
     repository: {
       async claimPendingOutbound(){ return { id:'O5', attempt_count:0, payload_json:{ text:'answer', attachments:[{ id:'D1', status:'PUBLISHED', visibility:'PUBLIC' }] } }; },
       async revalidateOutboundAttachments(payload){ calls.push(['revalidate', payload.attachments]); return { allowed:true, document_ids:['D1'] }; },
-      async markOutboundSent(id){ calls.push(['sent', id]); }, async scheduleOutboundRetry(id, delay, error){ calls.push(['retry',id,delay,error]); }, async markOutboundFailed(){ calls.push(['failed']); }
+      async markOutboundSent(id){ calls.push(['sent', id]); }, async scheduleOutboundRetry(id, delay, error){ calls.push(['retry',id,delay,error]); }, async markOutboundFailed(id, error){ calls.push(['failed',id,error]); }
     },
     provider: { async send(){ calls.push(['send']); return { provider_message_id:'P5' }; } }
   });
@@ -96,32 +96,31 @@ test('attachment is revalidated immediately before provider send', async () => {
   assert.deepEqual(calls.map((entry) => entry[0]), ['revalidate', 'send', 'sent']);
 });
 
-test('attachment is fail-closed when publication gate no longer passes', async () => {
+test('attachment publication policy failure is terminal and never retried', async () => {
   const calls = [];
   const worker = createOutboxWorker({
     repository: {
       async claimPendingOutbound(){ return { id:'O6', attempt_count:0, payload_json:{ text:'answer', attachments:[{ id:'D2' }] } }; },
       async revalidateOutboundAttachments(){ calls.push(['revalidate']); return { allowed:false, blocked_document_ids:['D2'] }; },
-      async markOutboundSent(){ calls.push(['sent']); }, async scheduleOutboundRetry(id, delay, error){ calls.push(['retry',id,delay,error]); }, async markOutboundFailed(){ calls.push(['failed']); }
+      async markOutboundSent(){ calls.push(['sent']); }, async scheduleOutboundRetry(){ calls.push(['retry']); }, async markOutboundFailed(id, error){ calls.push(['failed',id,error]); }
     },
     provider: { async send(){ calls.push(['send']); return { provider_message_id:'SHOULD-NOT-SEND' }; } }
   });
-  assert.deepEqual(await worker.processOne(), { status:'RETRY', id:'O6', delay_seconds:30 });
-  assert.equal(calls[0][0], 'revalidate');
-  assert.equal(calls.some((entry) => entry[0] === 'send'), false);
-  assert.match(calls[1][3], /^OUTBOUND_ATTACHMENT_BLOCKED:/);
+  assert.deepEqual(await worker.processOne(), { status:'FAILED_POLICY', id:'O6' });
+  assert.deepEqual(calls.map((entry) => entry[0]), ['revalidate', 'failed']);
+  assert.match(calls[1][2], /^OUTBOUND_ATTACHMENT_BLOCKED:/);
 });
 
-test('attachment send is fail-closed if repository cannot revalidate it', async () => {
+test('attachment send is terminally blocked if repository cannot revalidate it', async () => {
   const calls = [];
   const worker = createOutboxWorker({
     repository: {
       async claimPendingOutbound(){ return { id:'O7', attempt_count:0, payload_json:{ text:'answer', attachments:[{ id:'D3' }] } }; },
-      async markOutboundSent(){ calls.push(['sent']); }, async scheduleOutboundRetry(id, delay, error){ calls.push(['retry',id,delay,error]); }, async markOutboundFailed(){ calls.push(['failed']); }
+      async markOutboundSent(){ calls.push(['sent']); }, async scheduleOutboundRetry(){ calls.push(['retry']); }, async markOutboundFailed(id, error){ calls.push(['failed',id,error]); }
     },
     provider: { async send(){ calls.push(['send']); return { provider_message_id:'SHOULD-NOT-SEND' }; } }
   });
-  assert.deepEqual(await worker.processOne(), { status:'RETRY', id:'O7', delay_seconds:30 });
-  assert.equal(calls.some((entry) => entry[0] === 'send'), false);
-  assert.match(calls[0][3], /^OUTBOX_ATTACHMENT_REVALIDATION_REQUIRED$/);
+  assert.deepEqual(await worker.processOne(), { status:'FAILED_POLICY', id:'O7' });
+  assert.deepEqual(calls.map((entry) => entry[0]), ['failed']);
+  assert.match(calls[0][2], /^OUTBOX_ATTACHMENT_REVALIDATION_REQUIRED$/);
 });
