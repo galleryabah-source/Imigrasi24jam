@@ -17,6 +17,11 @@ async function appendAuditEvent(tx, event) {
   return result.rows[0];
 }
 
+function attachmentIds(payload) {
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.attachments)) return [];
+  return payload.attachments.map((attachment) => String(attachment?.id ?? '').trim()).filter(Boolean);
+}
+
 export function createOutboxLeaseRepository(db, { workerId, leaseSeconds = 60 } = {}) {
   if (!db || typeof db.query !== 'function') throw new Error('DATABASE_QUERY_REQUIRED');
   if (!workerId) throw new Error('WORKER_ID_REQUIRED');
@@ -45,6 +50,28 @@ export function createOutboxLeaseRepository(db, { workerId, leaseSeconds = 60 } 
         RETURNING o.*
       `, [workerId, leaseSeconds]);
       return result.rows[0] ?? null;
+    },
+
+    async revalidateOutboundAttachments(payload) {
+      const ids = attachmentIds(payload);
+      if (!ids.length) return Object.freeze({ allowed: true, document_ids: [] });
+      if (ids.length !== payload.attachments.length) return Object.freeze({ allowed: false, reason: 'ATTACHMENT_ID_REQUIRED', document_ids: ids });
+
+      const result = await db.query(`
+        SELECT id
+        FROM documents
+        WHERE id = ANY($1::uuid[])
+          AND access_classification = 'PUBLIC'
+          AND status = 'PUBLISHED'
+          AND immigration_relevance_status = 'VERIFIED'
+          AND authority_status = 'VERIFIED'
+          AND content_integrity_status = 'VERIFIED'
+          AND allow_whatsapp_attachment = true
+          AND quarantined = false
+      `, [ids]);
+      const allowedIds = new Set(result.rows.map((row) => String(row.id)));
+      const blocked = ids.filter((id) => !allowedIds.has(id));
+      return Object.freeze({ allowed: blocked.length === 0, document_ids: ids, blocked_document_ids: blocked });
     },
 
     async markOutboundSent(id, providerMessageId = null, auditEvent = null) {
