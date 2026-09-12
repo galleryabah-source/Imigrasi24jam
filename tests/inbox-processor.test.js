@@ -13,14 +13,21 @@ function answerKnowledge() {
   };
 }
 
+function baseAnswerRepository(overrides = {}) {
+  return {
+    async claimPendingInbound() { return { id: 'inbox-1', provider: 'whatsapp', provider_message_id: 'wamid-1', conversation_id: '628123', sender: '628123', payload_json: { text: 'persyaratan paspor' }, received_at: new Date().toISOString() }; },
+    async completeInboundWithOutbound(input) { return { id: 'outbox-1', delivery_state: 'PENDING', input }; },
+    async markInboundProcessed() { throw new Error('must use atomic completion for answer'); },
+    async markInboundFailed() { throw new Error('unexpected failure'); },
+    ...overrides
+  };
+}
+
 test('inbox processor queues an answered message through atomic completion', async () => {
   const calls = [];
-  const repository = {
-    async claimPendingInbound() { return { id: 'inbox-1', provider: 'whatsapp', provider_message_id: 'wamid-1', conversation_id: '628123', sender: '628123', payload_json: { text: 'persyaratan paspor' }, received_at: new Date().toISOString() }; },
-    async completeInboundWithOutbound(input) { calls.push(input); return { id: 'outbox-1', delivery_state: 'PENDING' }; },
-    async markInboundProcessed() { throw new Error('must use atomic completion for answer'); },
-    async markInboundFailed() { throw new Error('unexpected failure'); }
-  };
+  const repository = baseAnswerRepository({
+    async completeInboundWithOutbound(input) { calls.push(input); return { id: 'outbox-1', delivery_state: 'PENDING' }; }
+  });
   const processor = createInboxProcessor({ repository, knowledgeProvider: async () => answerKnowledge() });
   const result = await processor.processOne({ now: '2026-09-03T00:00:00.000Z' });
   assert.equal(result.status, 'QUEUED'); assert.equal(result.inboxId, 'inbox-1'); assert.equal(result.outboxId, 'outbox-1');
@@ -50,11 +57,44 @@ test('inbox processor persists durable conversation and inbox completion atomica
   assert.equal(calls[0].expectedConversationVersion, 4); assert.equal(calls[0].conversation.state, 'ESCALATION');
 });
 
-test('inbox processor exposes a controlled conflict outcome when conversation version changes concurrently', async () => {
-  let failedId = null;
+test('inbox processor retries a conversation version conflict with a fresh version and queues exactly once', async () => {
+  const completionCalls = [];
+  let attempts = 0;
   const repository = {
-    async claimPendingInbound() { return { id: 'inbox-concurrent-1', provider: 'whatsapp', provider_message_id: 'wamid-concurrent-1', conversation_id: '628199', sender: '628199', payload_json: { text: 'persyaratan paspor' }, received_at: new Date().toISOString() }; },
-    async completeInboundWithOutboundAndConversation() { throw new Error('CONVERSATION_VERSION_CONFLICT'); },
+    async claimPendingInbound() { return { id: 'inbox-retry-1', provider: 'whatsapp', provider_message_id: 'wamid-retry-1', conversation_id: '628199', sender: '628199', payload_json: { text: 'persyaratan paspor' }, received_at: new Date().toISOString() }; },
+    async completeInboundWithOutboundAndConversation(input) {
+      completionCalls.push(input);
+      attempts += 1;
+      if (attempts === 1) throw new Error('CONVERSATION_VERSION_CONFLICT');
+      return { outbox: { id: 'outbox-retry-1', delivery_state: 'PENDING' } };
+    },
+    async completeInboundWithConversation() { throw new Error('must use answer atomic path'); },
+    async markInboundProcessed() { throw new Error('must not bypass optimistic locking'); },
+    async markInboundFailed() { throw new Error('unexpected failure'); },
+    async completeInboundWithOutbound() { throw new Error('must use durable atomic path'); }
+  };
+  let reads = 0;
+  const conversationRepository = {
+    async getOrCreate() {
+      reads += 1;
+      return { conversation_id: '628199', user_id: null, state: 'NEW', scope: null, intent: null, sub_intent: null, pending_question: null, turn_count: 0, version: reads === 1 ? 7 : 8 };
+    }
+  };
+  const processor = createInboxProcessor({ repository, conversationRepository, knowledgeProvider: async () => answerKnowledge(), conversationConflictRetries: 2 });
+  const result = await processor.processOne({ now: '2026-09-03T00:00:00.000Z' });
+  assert.equal(result.status, 'QUEUED');
+  assert.equal(result.outboxId, 'outbox-retry-1');
+  assert.equal(completionCalls.length, 2);
+  assert.deepEqual(completionCalls.map((call) => call.expectedConversationVersion), [7, 8]);
+});
+
+test('inbox processor fails closed after bounded conversation version conflict retries', async () => {
+  let failedId = null;
+  let completions = 0;
+  let reads = 0;
+  const repository = {
+    async claimPendingInbound() { return { id: 'inbox-conflict-exhausted', provider: 'whatsapp', provider_message_id: 'wamid-conflict-exhausted', conversation_id: '628199', sender: '628199', payload_json: { text: 'persyaratan paspor' }, received_at: new Date().toISOString() }; },
+    async completeInboundWithOutboundAndConversation() { completions += 1; throw new Error('CONVERSATION_VERSION_CONFLICT'); },
     async completeInboundWithConversation() { throw new Error('CONVERSATION_VERSION_CONFLICT'); },
     async markInboundProcessed() { throw new Error('must not bypass optimistic locking'); },
     async markInboundFailed(id) { failedId = id; },
@@ -62,15 +102,18 @@ test('inbox processor exposes a controlled conflict outcome when conversation ve
   };
   const conversationRepository = {
     async getOrCreate() {
-      return { conversation_id: '628199', user_id: null, state: 'NEW', scope: null, intent: null, sub_intent: null, pending_question: null, turn_count: 0, version: 7 };
+      reads += 1;
+      return { conversation_id: '628199', user_id: null, state: 'NEW', scope: null, intent: null, sub_intent: null, pending_question: null, turn_count: 0, version: reads };
     }
   };
-  const processor = createInboxProcessor({ repository, conversationRepository, knowledgeProvider: async () => answerKnowledge() });
+  const processor = createInboxProcessor({ repository, conversationRepository, knowledgeProvider: async () => answerKnowledge(), conversationConflictRetries: 2 });
   const result = await processor.processOne({ now: '2026-09-03T00:00:00.000Z' });
   assert.equal(result.status, 'FAILED');
   assert.equal(result.reason, 'PROCESSING_ERROR');
-  assert.equal(result.inboxId, 'inbox-concurrent-1');
-  assert.equal(failedId, 'inbox-concurrent-1');
+  assert.equal(result.inboxId, 'inbox-conflict-exhausted');
+  assert.equal(failedId, 'inbox-conflict-exhausted');
+  assert.equal(completions, 3);
+  assert.equal(reads, 3);
 });
 
 test('inbox processor never fabricates an answer when retrieval is unavailable', async () => {
