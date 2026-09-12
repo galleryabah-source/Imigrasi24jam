@@ -60,6 +60,12 @@ export function createOutboxWorker({ repository, provider, providerTimeoutMs = D
 
       let providerResult;
       try {
+        const attachments = Array.isArray(job.payload_json.attachments) ? job.payload_json.attachments : [];
+        if (attachments.length) {
+          if (typeof repository.revalidateOutboundAttachments !== 'function') throw new Error('OUTBOX_ATTACHMENT_REVALIDATION_REQUIRED');
+          const validation = await repository.revalidateOutboundAttachments(job.payload_json);
+          if (!validation?.allowed) throw new Error(`OUTBOUND_ATTACHMENT_BLOCKED:${validation?.reason ?? validation?.blocked_document_ids?.join(',') ?? 'POLICY'}`);
+        }
         providerResult = await sendWithTimeout(provider, job.payload_json, {
           idempotency_key: `imigrasi24jam:outbox:${job.id}`
         }, providerTimeoutMs);
