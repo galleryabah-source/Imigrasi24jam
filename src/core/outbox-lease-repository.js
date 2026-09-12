@@ -1,3 +1,6 @@
+export const DEFAULT_OUTBOX_LEASE_SECONDS = 60;
+export const MIN_OUTBOX_LEASE_SECONDS = 30;
+
 function requireAuditEvent(event) {
   if (!event || typeof event !== 'object' || !event.event_type || !event.subject_type || !event.subject_id) {
     throw new Error('AUDIT_EVENT_REQUIRED');
@@ -22,10 +25,10 @@ function attachmentIds(payload) {
   return payload.attachments.map((attachment) => String(attachment?.id ?? '').trim()).filter(Boolean);
 }
 
-export function createOutboxLeaseRepository(db, { workerId, leaseSeconds = 60 } = {}) {
+export function createOutboxLeaseRepository(db, { workerId, leaseSeconds = DEFAULT_OUTBOX_LEASE_SECONDS } = {}) {
   if (!db || typeof db.query !== 'function') throw new Error('DATABASE_QUERY_REQUIRED');
   if (!workerId) throw new Error('WORKER_ID_REQUIRED');
-  if (!Number.isInteger(leaseSeconds) || leaseSeconds <= 0) throw new Error('INVALID_LEASE_SECONDS');
+  if (!Number.isInteger(leaseSeconds) || leaseSeconds < MIN_OUTBOX_LEASE_SECONDS) throw new Error('INVALID_LEASE_SECONDS');
   const boundedError = (value) => String(value ?? '').slice(0, 2000);
 
   return Object.freeze({
