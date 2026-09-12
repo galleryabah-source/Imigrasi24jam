@@ -37,7 +37,6 @@ export function createPostgresKnowledgeProvider(db, { publicOnly = true } = {}) 
         ks.authority_name,
         ks.title AS source_title,
         ks.reference_number,
-        ks.source_url,
         av.answer_text AS direct_answer,
         COALESCE(qp.question_patterns, ARRAY[]::text[]) AS question_patterns,
         COALESCE(ev.evidence, '[]'::jsonb) AS verified_evidence
