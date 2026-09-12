@@ -7,6 +7,11 @@ function errorMessage(error) {
   return String(error?.message ?? error).slice(0, 2000);
 }
 
+function isTerminalPolicyError(error) {
+  const message = errorMessage(error);
+  return message.startsWith('OUTBOUND_ATTACHMENT_BLOCKED:') || message === 'OUTBOX_ATTACHMENT_REVALIDATION_REQUIRED';
+}
+
 function validateProviderResult(result) {
   if (!result || typeof result !== 'object') throw new Error('PROVIDER_ACK_INVALID');
   const providerMessageId = result.provider_message_id == null ? null : String(result.provider_message_id).trim();
@@ -71,8 +76,12 @@ export function createOutboxWorker({ repository, provider, providerTimeoutMs = D
         }, providerTimeoutMs);
         providerResult = validateProviderResult(providerResult);
       } catch (error) {
-        const retry = calculateRetry(job.attempt_count);
         const message = errorMessage(error);
+        if (isTerminalPolicyError(error)) {
+          await repository.markOutboundFailed(job.id, message);
+          return Object.freeze({ status: 'FAILED_POLICY', id: job.id });
+        }
+        const retry = calculateRetry(job.attempt_count);
         if (retry.terminal) {
           await repository.markOutboundFailed(job.id, message);
           return Object.freeze({ status: 'FAILED', id: job.id });
