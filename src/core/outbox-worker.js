@@ -2,6 +2,7 @@ import { AUDIT_EVENTS, createAuditEvent } from './audit-contract.js';
 
 export const RETRY_DELAYS_SECONDS = Object.freeze([30, 120, 600, 1800, 3600]);
 export const DEFAULT_PROVIDER_TIMEOUT_MS = 15000;
+export const MIN_OUTBOX_LEASE_SECONDS = 30;
 
 function errorMessage(error) {
   return String(error?.message ?? error).slice(0, 2000);
@@ -24,6 +25,13 @@ function requireTimeout(timeoutMs) {
   return timeoutMs;
 }
 
+function requireLeaseSeconds(leaseSeconds, timeoutMs) {
+  if (!Number.isInteger(leaseSeconds) || leaseSeconds < MIN_OUTBOX_LEASE_SECONDS) throw new Error('INVALID_OUTBOX_LEASE_SECONDS');
+  const timeoutSeconds = Math.ceil(timeoutMs / 1000);
+  if (leaseSeconds <= timeoutSeconds) throw new Error('OUTBOX_LEASE_MUST_EXCEED_PROVIDER_TIMEOUT');
+  return leaseSeconds;
+}
+
 async function sendWithTimeout(provider, payload, options, timeoutMs) {
   let timer;
   try {
@@ -43,7 +51,7 @@ export function calculateRetry(attemptCount) {
   return Object.freeze({ terminal: false, delay_seconds: RETRY_DELAYS_SECONDS[n] });
 }
 
-export function createOutboxWorker({ repository, provider, providerTimeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS } = {}) {
+export function createOutboxWorker({ repository, provider, providerTimeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS, leaseSeconds = 60 } = {}) {
   if (!repository ||
       typeof repository.claimPendingOutbound !== 'function' ||
       typeof repository.markOutboundSent !== 'function' ||
@@ -53,6 +61,7 @@ export function createOutboxWorker({ repository, provider, providerTimeoutMs = D
   }
   if (!provider || typeof provider.send !== 'function') throw new Error('PROVIDER_ADAPTER_REQUIRED');
   requireTimeout(providerTimeoutMs);
+  requireLeaseSeconds(leaseSeconds, providerTimeoutMs);
 
   return Object.freeze({
     async processOne() {
