@@ -18,7 +18,7 @@ test('outbox worker rejects a lease that is not longer than provider timeout', (
   assert.throws(() => createOutboxWorker({ repository, provider:{ async send(){} }, providerTimeoutMs:30000, leaseSeconds:29 }), /INVALID_OUTBOX_LEASE_SECONDS/);
 });
 
-test('successful delivery marks sent and passes a stable idempotency key and audit event', async () => {
+test('successful delivery marks sent and passes a stable idempotency key and abort signal', async () => {
   const calls = [];
   const worker = createOutboxWorker({
     repository: {
@@ -30,6 +30,8 @@ test('successful delivery marks sent and passes a stable idempotency key and aud
   });
   assert.deepEqual(await worker.processOne(), { status:'SENT', id:'O1' });
   assert.equal(calls[0][0], 'send'); assert.equal(calls[0][2].idempotency_key, 'imigrasi24jam:outbox:O1');
+  assert.equal(calls[0][2].signal instanceof AbortSignal, true);
+  assert.equal(calls[0][2].signal.aborted, false);
   assert.equal(calls[1][0], 'sent'); assert.equal(calls[1][1], 'O1'); assert.equal(calls[1][2], 'P1');
   assert.equal(calls[1][3].event_type, 'ANSWER_SERVED'); assert.equal(calls[1][3].subject_type, 'MESSAGE_OUTBOX'); assert.equal(calls[1][3].subject_id, 'O1');
   assert.deepEqual(calls[1][3].after_json, { delivery_state:'SENT', provider_message_id:'P1', conversation_id:'C1', reply_to_message_id:'I1' });
@@ -48,18 +50,40 @@ test('provider failure schedules retry without rerunning core', async () => {
   assert.deepEqual(calls, [['retry','O2',30]]);
 });
 
-test('provider execution is bounded by the configured timeout', async () => {
+test('provider timeout aborts the provider signal', async () => {
   const calls = [];
+  let observedSignal;
   const worker = createOutboxWorker({
     providerTimeoutMs: 20,
     repository: {
       async claimPendingOutbound(){ return { id:'O-TIMEOUT', attempt_count:0, payload_json:{ text:'slow' } }; },
       async markOutboundSent(){ calls.push(['sent']); }, async scheduleOutboundRetry(id, delay, error){ calls.push(['retry',id,delay,error]); }, async markOutboundFailed(){ calls.push(['failed']); }
     },
-    provider: { async send(){ await new Promise(() => {}); } }
+    provider: { async send(payload, options){
+      observedSignal = options.signal;
+      await new Promise((resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(new Error('ABORTED_BY_WORKER')), { once:true });
+      });
+    } }
   });
   const result = await worker.processOne();
   assert.deepEqual(result, { status:'RETRY', id:'O-TIMEOUT', delay_seconds:30 });
+  assert.equal(observedSignal.aborted, true);
+  assert.equal(calls.length, 1); assert.equal(calls[0][0], 'retry'); assert.match(calls[0][3], /^PROVIDER_TIMEOUT$/);
+});
+
+test('provider execution is bounded by the configured timeout', async () => {
+  const calls = [];
+  const worker = createOutboxWorker({
+    providerTimeoutMs: 20,
+    repository: {
+      async claimPendingOutbound(){ return { id:'O-TIMEOUT-2', attempt_count:0, payload_json:{ text:'slow' } }; },
+      async markOutboundSent(){ calls.push(['sent']); }, async scheduleOutboundRetry(id, delay, error){ calls.push(['retry',id,delay,error]); }, async markOutboundFailed(){ calls.push(['failed']); }
+    },
+    provider: { async send(){ await new Promise(() => {}); } }
+  });
+  const result = await worker.processOne();
+  assert.deepEqual(result, { status:'RETRY', id:'O-TIMEOUT-2', delay_seconds:30 });
   assert.equal(calls.length, 1); assert.equal(calls[0][0], 'retry'); assert.match(calls[0][3], /^PROVIDER_TIMEOUT$/);
 });
 
