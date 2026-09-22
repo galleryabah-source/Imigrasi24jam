@@ -2,6 +2,7 @@ import { orchestrateMessage } from './message-orchestrator.js';
 import { createOutboundMessage } from './message-delivery.js';
 
 const DEFAULT_LEASE_SECONDS = 60;
+const DEFAULT_LEASE_HEARTBEAT_SECONDS = 20;
 const DEFAULT_CONVERSATION_CONFLICT_RETRIES = 2;
 const DEFAULT_WORKER_ID = process.env.INBOX_WORKER_ID || `inbox-worker-${process.pid}`;
 
@@ -15,7 +16,31 @@ function isConversationVersionConflict(error) {
   return String(error?.message ?? error) === 'CONVERSATION_VERSION_CONFLICT';
 }
 
-export function createInboxProcessor({ repository, knowledgeProvider, conversationRepository = null, workerId = DEFAULT_WORKER_ID, leaseSeconds = DEFAULT_LEASE_SECONDS, conversationConflictRetries = DEFAULT_CONVERSATION_CONFLICT_RETRIES } = {}) {
+function requireHeartbeatSeconds(value, leaseSeconds) {
+  if (!Number.isInteger(value) || value <= 0 || value >= leaseSeconds) throw new Error('INVALID_INBOX_LEASE_HEARTBEAT_SECONDS');
+  return value;
+}
+
+function startLeaseHeartbeat(repository, { inboxId, workerId, leaseSeconds, heartbeatSeconds }) {
+  if (typeof repository.renewInboundLease !== 'function') return () => {};
+  let stopped = false;
+  const renew = async () => {
+    if (stopped) return;
+    try {
+      await repository.renewInboundLease({ inboxId, workerId, leaseSeconds });
+    } catch {
+      // Final atomic completion still enforces lease ownership; a failed heartbeat never grants ownership.
+    }
+  };
+  const timer = setInterval(renew, heartbeatSeconds * 1000);
+  if (typeof timer.unref === 'function') timer.unref();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
+export function createInboxProcessor({ repository, knowledgeProvider, conversationRepository = null, workerId = DEFAULT_WORKER_ID, leaseSeconds = DEFAULT_LEASE_SECONDS, leaseHeartbeatSeconds = DEFAULT_LEASE_HEARTBEAT_SECONDS, conversationConflictRetries = DEFAULT_CONVERSATION_CONFLICT_RETRIES } = {}) {
   if (!repository || typeof repository.claimPendingInbound !== 'function' || typeof repository.markInboundProcessed !== 'function' || typeof repository.markInboundFailed !== 'function' || typeof repository.completeInboundWithOutbound !== 'function') throw new Error('INBOX_PROCESSOR_REPOSITORY_REQUIRED');
   if (typeof knowledgeProvider !== 'function') throw new Error('KNOWLEDGE_PROVIDER_REQUIRED');
   if (conversationRepository && typeof conversationRepository.getOrCreate !== 'function') throw new Error('CONVERSATION_REPOSITORY_REQUIRED');
@@ -23,12 +48,14 @@ export function createInboxProcessor({ repository, knowledgeProvider, conversati
   if (conversationRepository && typeof repository.completeInboundWithOutboundAndConversation !== 'function') throw new Error('INBOX_ANSWER_CONVERSATION_ATOMIC_COMPLETION_REQUIRED');
   if (!workerId || typeof workerId !== 'string') throw new Error('INBOX_WORKER_ID_REQUIRED');
   if (!Number.isInteger(leaseSeconds) || leaseSeconds <= 0) throw new Error('INVALID_INBOX_LEASE_SECONDS');
+  requireHeartbeatSeconds(leaseHeartbeatSeconds, leaseSeconds);
   if (!Number.isInteger(conversationConflictRetries) || conversationConflictRetries < 0 || conversationConflictRetries > 5) throw new Error('INVALID_CONVERSATION_CONFLICT_RETRIES');
 
   return Object.freeze({
     async processOne({ now = new Date().toISOString() } = {}) {
       const row = await repository.claimPendingInbound({ workerId, leaseSeconds });
       if (!row) return Object.freeze({ status: 'IDLE' });
+      const stopHeartbeat = startLeaseHeartbeat(repository, { inboxId: row.id, workerId, leaseSeconds, heartbeatSeconds: leaseHeartbeatSeconds });
       try {
         const message = normalizeInboxMessage(row);
         const knowledge = await knowledgeProvider({ message, now });
@@ -70,6 +97,8 @@ export function createInboxProcessor({ repository, knowledgeProvider, conversati
       } catch (error) {
         try { await repository.markInboundFailed(row.id, String(error?.message ?? error), workerId); } catch { /* recovery worker inspects the lease record */ }
         return Object.freeze({ status: 'FAILED', inboxId: row.id, reason: 'PROCESSING_ERROR' });
+      } finally {
+        stopHeartbeat();
       }
     }
   });
