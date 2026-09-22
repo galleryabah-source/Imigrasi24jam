@@ -148,3 +148,44 @@ test('inbox processor fails closed when durable conversation completion contract
     conversationRepository: { async getOrCreate() {} }, knowledgeProvider: async () => []
   }), /INBOX_CONVERSATION_ATOMIC_COMPLETION_REQUIRED/);
 });
+
+
+test('inbox processor renews the lease while long processing is active', async () => {
+  const renewals = [];
+  const repository = {
+    async claimPendingInbound() {
+      return { id: 'inbox-heartbeat-1', provider: 'whatsapp', provider_message_id: 'wamid-heartbeat-1', conversation_id: '628199', sender: '628199', payload_json: { text: 'halo' }, received_at: new Date().toISOString() };
+    },
+    async renewInboundLease(input) { renewals.push(input); },
+    async markInboundProcessed() {},
+    async markInboundFailed() { throw new Error('unexpected failure'); },
+    async completeInboundWithOutbound() { throw new Error('must not queue'); }
+  };
+  const processor = createInboxProcessor({
+    repository,
+    leaseSeconds: 3,
+    leaseHeartbeatSeconds: 1,
+    knowledgeProvider: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 1150));
+      return [];
+    }
+  });
+  const result = await processor.processOne({ now: '2026-09-03T00:00:00.000Z' });
+  assert.equal(result.status, 'NO_MATCH');
+  assert.ok(renewals.length >= 1);
+  assert.equal(renewals[0].inboxId, 'inbox-heartbeat-1');
+  assert.equal(renewals[0].workerId, process.env.INBOX_WORKER_ID || `inbox-worker-${process.pid}`);
+  assert.equal(renewals[0].leaseSeconds, 3);
+});
+
+test('inbox processor rejects a heartbeat interval that can reach the lease boundary', () => {
+  const repository = {
+    async claimPendingInbound() {}, async markInboundProcessed() {}, async markInboundFailed() {}, async completeInboundWithOutbound() {}
+  };
+  assert.throws(() => createInboxProcessor({
+    repository,
+    knowledgeProvider: async () => [],
+    leaseSeconds: 30,
+    leaseHeartbeatSeconds: 30
+  }), /INVALID_INBOX_LEASE_HEARTBEAT_SECONDS/);
+});
