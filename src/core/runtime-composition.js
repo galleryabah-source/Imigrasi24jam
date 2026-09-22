@@ -26,13 +26,12 @@ export function createRuntimeComposition({ db, knowledgeProvider = null, whatsap
   const outboxWorker = createOutboxWorker({
     repository: outboxRepository,
     provider: {
-      async send(payload, { idempotency_key: idempotencyKey } = {}) {
+      async send(payload, { idempotency_key: idempotencyKey, signal } = {}) {
         if (!payload || typeof payload !== 'object') throw new Error('OUTBOX_PAYLOAD_INVALID');
-        const options = Object.freeze({ idempotency_key: idempotencyKey });
-        const operation = Array.isArray(payload.attachments) && payload.attachments.length
+        const options = Object.freeze({ idempotency_key: idempotencyKey, signal });
+        return Array.isArray(payload.attachments) && payload.attachments.length
           ? whatsappProvider.sendAttachment({ ...payload, options })
           : whatsappProvider.sendText({ ...payload, options });
-        return withTimeout(operation, outboundTimeoutMs);
       }
     }
   });
@@ -40,12 +39,3 @@ export function createRuntimeComposition({ db, knowledgeProvider = null, whatsap
   return Object.freeze({ db, knowledgeProvider: resolvedKnowledgeProvider, inboxRepository, outboxRepository, conversationRepository, inboxProcessor, outboxWorker, application: createApplication({ inboxProcessor, outboxWorker }) });
 }
 
-async function withTimeout(promise, timeoutMs) {
-  if (!Number.isInteger(timeoutMs) || timeoutMs <= 0) throw new Error('INVALID_OUTBOUND_TIMEOUT_MS');
-  let timer;
-  try {
-    return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('OUTBOUND_PROVIDER_TIMEOUT')), timeoutMs); })]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
