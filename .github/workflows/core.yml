@@ -1,13 +1,12 @@
-name: Imigrasi24jam Core
+name: Imigrasi24jam Core (manual)
 
 on:
-  push:
-    branches: [main, 'phase0-*']
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   core:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     services:
       postgres:
         image: postgres:16
@@ -28,7 +27,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
       - name: Install dependencies
         run: npm install
       - name: Syntax check

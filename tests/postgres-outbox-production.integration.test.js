@@ -42,9 +42,14 @@ test('message_outbox supports real concurrent claim, ownership, and lease recove
 
     await new Promise(r => setTimeout(r, 1100));
     const reclaimClient = owner === 'W1' ? b : a;
-    const reclaimed = await claim(reclaimClient, owner === 'W1' ? 'W2' : 'W1');
+    const newOwner = owner === 'W1' ? 'W2' : 'W1';
+    const reclaimed = await claim(reclaimClient, newOwner);
     assert.equal(reclaimed?.id, ids[0]);
+    assert.equal(reclaimed?.lease_owner, newOwner);
     assert.notEqual(reclaimed.lease_owner, owner);
+
+    const staleOwnerTransition = await seedUnavailableTransition(url, ids[0], owner);
+    assert.equal(staleOwnerTransition, 0);
   } finally {
     await a.end(); await b.end();
     const cleanup = new Client({ connectionString: url });
@@ -52,3 +57,20 @@ test('message_outbox supports real concurrent claim, ownership, and lease recove
     try { await cleanup.query(`DELETE FROM message_outbox WHERE id = ANY($1::uuid[])`, [ids]); await cleanup.query(`DELETE FROM message_inbox WHERE provider='integration-test' AND provider_message_id=$1`, [marker]); } finally { await cleanup.end(); }
   }
 });
+
+
+async function seedUnavailableTransition(connectionString, id, staleOwner) {
+  const client = new Client({ connectionString });
+  await client.connect();
+  try {
+    const result = await client.query(
+      `UPDATE message_outbox
+       SET delivery_state='SENT', sent_at=now()
+       WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$2`,
+      [id, staleOwner]
+    );
+    return result.rowCount;
+  } finally {
+    await client.end();
+  }
+}
