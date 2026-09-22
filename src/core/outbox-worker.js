@@ -33,11 +33,17 @@ function requireLeaseSeconds(leaseSeconds, timeoutMs) {
 }
 
 async function sendWithTimeout(provider, payload, options, timeoutMs) {
+  const controller = new AbortController();
   let timer;
   try {
     return await Promise.race([
-      provider.send(payload, options),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('PROVIDER_TIMEOUT')), timeoutMs); })
+      provider.send(payload, { ...options, signal: controller.signal }),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort(new Error('PROVIDER_TIMEOUT'));
+          reject(new Error('PROVIDER_TIMEOUT'));
+        }, timeoutMs);
+      })
     ]);
   } finally {
     if (timer) clearTimeout(timer);
