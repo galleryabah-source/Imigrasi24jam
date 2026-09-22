@@ -119,6 +119,18 @@ export function createInboxOutboxRepository(db) {
       return result.rows[0] ?? null;
     },
 
+    async renewInboundLease({ inboxId, workerId, leaseSeconds = 60 } = {}) {
+      requireWorkerId(workerId); requireLeaseSeconds(leaseSeconds);
+      const result = await db.query(`
+        UPDATE message_inbox
+        SET lease_expires_at=now() + ($3 * interval '1 second')
+        WHERE id=$1 AND processing_status='PROCESSING' AND lease_owner=$2
+        RETURNING id, lease_expires_at
+      `, [inboxId, workerId, leaseSeconds]);
+      if (result.rowCount !== 1) throw new Error('INBOX_LEASE_LOST');
+      return result.rows[0];
+    },
+
     async enqueueOutbound({ conversationId, replyToMessageId, provider, payload }) {
       const result = await db.query(`
         INSERT INTO message_outbox (conversation_id, reply_to_message_id, provider, payload_json)
