@@ -2,6 +2,7 @@ import { createOutboxLeaseRepository } from './outbox-lease-repository.js';
 import { createPostgresDeliveryIdentityResolver } from './postgres-delivery-reconciliation.js';
 import { runTransactionalDeliveryReconciliation, createDeliveryReconciliationAudit } from './transactional-delivery-reconciliation.js';
 import { normalizeProviderDeliveryStatus } from './delivery-reconciliation.js';
+import { insertAuditEvent } from '../db/audit-repository.js';
 
 export async function reconcileProviderCallbackTransaction(db, { provider, parseDeliveryStatus, request, actorId = null } = {}) {
   if (!db || typeof db.transaction !== 'function') throw new Error('DATABASE_TRANSACTION_REQUIRED');
@@ -28,11 +29,8 @@ export async function reconcileProviderCallbackTransaction(db, { provider, parse
     },
     writeAudit: async (tx, data) => {
       const event = createDeliveryReconciliationAudit({ identity:data.identity, result:data.result, actorId });
-      const persisted = await tx.query(
-        `INSERT INTO audit_events (id, actor_id, event_type, subject_type, subject_id, before_json, after_json, reason, correlation_id) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8) RETURNING id`,
-        [event.actor_id,event.event_type,event.subject_type,event.subject_id,JSON.stringify(event.before_json),JSON.stringify(event.after_json),event.reason,event.correlation_id]
-      );
-      return persisted.rows;
+      const persisted = await insertAuditEvent(tx, event);
+      return persisted ? [persisted] : [];
     }
   });
 }
