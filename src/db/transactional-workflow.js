@@ -27,3 +27,22 @@ export async function runApprovalPublicationTransaction(db, workflow) {
     return Object.freeze({ approval, publication, audit });
   });
 }
+
+
+export async function runTransactionalMessageLifecycle(db, workflow) {
+  if (!db || typeof db.transaction !== 'function') throw new Error('DATABASE_TRANSACTION_REQUIRED');
+  const required = ['admitInbound', 'processConversation', 'enqueueOutbound', 'writeAudit'];
+  if (!workflow || required.some((name) => typeof workflow[name] !== 'function')) {
+    throw new Error('INVALID_MESSAGE_LIFECYCLE_WORKFLOW');
+  }
+
+  return db.transaction(async (tx) => {
+    const inbound = await workflow.admitInbound(tx);
+    if (!inbound) return Object.freeze({ status: 'DUPLICATE_OR_REJECTED', inbound: null, conversation: null, outbound: null, audit: [] });
+
+    const conversation = await workflow.processConversation(tx, inbound);
+    const outbound = await workflow.enqueueOutbound(tx, { inbound, conversation });
+    const audit = await workflow.writeAudit(tx, { inbound, conversation, outbound });
+    return Object.freeze({ status: 'COMMITTED', inbound, conversation, outbound, audit });
+  });
+}
