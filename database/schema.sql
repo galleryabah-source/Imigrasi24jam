@@ -112,7 +112,8 @@ CREATE TABLE approvals (
   decision text NOT NULL CHECK (decision IN ('APPROVED','REJECTED','RETURNED')),
   reviewer_id uuid NOT NULL,
   reason text,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  correlation_id text
 );
 
 CREATE TABLE document_validations (
