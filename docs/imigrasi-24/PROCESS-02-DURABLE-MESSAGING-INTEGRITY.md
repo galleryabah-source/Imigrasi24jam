@@ -45,7 +45,8 @@ Setelah admission, pemrosesan harus mempertahankan satu identitas pesan dan conv
 - [x] Transactional message lifecycle contract binds admission → conversation → outbox → audit to one DB transaction
 - [x] Transactional message lifecycle contract binds admission → conversation → outbox → audit to one DB transaction
 - [ ] Persisted audit trail accepts the lifecycle correlation contract without schema mismatch
-- [ ] Provider delivery has a verified idempotency/reconciliation contract
+- [x] Provider delivery receives a deterministic idempotency identity and requires provider delivery identity before state commit
+- [ ] Provider delivery has a verified external reconciliation contract
 - [x] Test regression untuk admission ordering
 - [ ] Hosted CI runner sehat
 - [ ] PostgreSQL integration suite PASS di hosted CI
