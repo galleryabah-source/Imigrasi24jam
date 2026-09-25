@@ -17,7 +17,7 @@ export function createPostgresDeliveryIdentityResolver(db, { provider } = {}) {
       JOIN message_inbox i ON i.id = o.reply_to_message_id
       WHERE o.provider = $1
         AND (
-          ($2::uuid IS NOT NULL AND o.id = $2::uuid)
+          ($2::text IS NOT NULL AND o.id::text = $2)
           OR ($3::text IS NOT NULL AND o.provider_message_id = $3)
           OR ($4::text IS NOT NULL AND o.last_error = 'IDEMPOTENCY_KEY:' || $4)
         )
@@ -48,7 +48,7 @@ export function createPostgresDeliveryPersistence(outboxRepository) {
 
   return async ({ identity, result }) => outboxRepository.reconcileProviderDelivery({
     outboxId: identity.outbox_id,
-    providerMessageId: result.outbound_provider_message_id ?? null,
+    providerMessageId: identity.outbound_provider_message_id ?? null,
     idempotencyKey: identity.idempotency_key,
     deliveryState: result.normalized.delivery_state
   });
