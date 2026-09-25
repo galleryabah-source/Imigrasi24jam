@@ -114,3 +114,8 @@ The provider reconciliation seam is now wired to the canonical `message_outbox` 
 ### Atomic delivery reconciliation boundary
 
 Delivery callback reconciliation is now modeled as an atomic workflow: resolve the canonical lifecycle identity → reconcile the delivery state → write the corresponding delivery audit event within the same database transaction. An unmatched callback exits without mutation or audit. The audit event carries the same conversation subject and lifecycle correlation identity, while outbound provider identity remains distinct from inbound provider identity.
+
+
+### Canonical provider callback composition
+
+The provider callback path is now composed as one application workflow: provider status parsing → durable identity resolution → canonical `message_outbox` reconciliation → delivery audit, all inside one database transaction. The callback entry point does not own a parallel delivery state. Unknown callbacks terminate as `UNMATCHED` before mutation or audit. This is application-level wiring; real provider webhook and hosted PostgreSQL evidence remain pending.
