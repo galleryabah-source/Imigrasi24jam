@@ -31,7 +31,9 @@ export async function runTransactionalDeliveryReconciliation(db, workflow) {
 export function createDeliveryReconciliationAudit({ identity, result, actorId = null }) {
   const eventType = result.normalized.delivery_state === 'FAILED'
     ? AUDIT_EVENTS.DELIVERY_FAILED
-    : AUDIT_EVENTS.DELIVERY_SENT;
+    : result.normalized.delivery_state === 'SENT'
+      ? AUDIT_EVENTS.DELIVERY_SENT
+      : AUDIT_EVENTS.DELIVERY_STATUS_RECONCILED;
 
   return createAuditEvent({
     actorId,
