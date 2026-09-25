@@ -23,3 +23,27 @@ test('duplicate inbound is not processed', async () => {
   assert.equal(result.status, 'DUPLICATE');
   assert.equal(runs, 0);
 });
+
+
+test('outbox is anchored to the durable inbound conversation identity', async () => {
+  const db = {
+    calls: [],
+    async transaction(fn) {
+      return fn({
+        async query(sql, params = []) {
+          db.calls.push({ sql, params });
+          if (sql.includes('INSERT INTO message_inbox')) return { rows: [{ id:'I2', conversation_id:'CANONICAL-C2', provider_message_id:'M2' }] };
+          if (sql.includes('INSERT INTO message_outbox')) return { rows:[{ id:'O2', delivery_state:'PENDING' }] };
+          return { rows:[] };
+        }
+      });
+    }
+  };
+  await claimAndProcessInbound(
+    db,
+    { provider:'whatsapp', providerMessageId:'M2', conversationId:'UNTRUSTED-C2', sender:'U1', payload:{ text:'hi' } },
+    async () => ({ text:'reply' })
+  );
+  const outboxCall = db.calls.find((x) => x.sql.includes('INSERT INTO message_outbox'));
+  assert.equal(outboxCall.params[0], 'CANONICAL-C2');
+});
