@@ -109,3 +109,8 @@ The lifecycle identity contract explicitly distinguishes the inbound provider me
 ### Canonical PostgreSQL reconciliation persistence
 
 The provider reconciliation seam is now wired to the canonical `message_outbox` record through `createPostgresDeliveryIdentityResolver` and `createPostgresDeliveryPersistence`. Identity resolution joins the outbound record to its durable inbound record; persistence delegates through the canonical outbox repository and refuses terminal-state mutation. This remains an application-level PostgreSQL contract until hosted integration evidence is available.
+
+
+### Atomic delivery reconciliation boundary
+
+Delivery callback reconciliation is now modeled as an atomic workflow: resolve the canonical lifecycle identity → reconcile the delivery state → write the corresponding delivery audit event within the same database transaction. An unmatched callback exits without mutation or audit. The audit event carries the same conversation subject and lifecycle correlation identity, while outbound provider identity remains distinct from inbound provider identity.
