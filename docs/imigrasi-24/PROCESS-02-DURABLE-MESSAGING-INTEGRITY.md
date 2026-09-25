@@ -163,3 +163,14 @@ Terminal provider callbacks are now explicitly idempotent at the canonical outbo
 This closes an important replay surface in the single lifecycle chain: provider retry → resolve same outbox identity → terminal no-op → no duplicate mutation/audit.
 
 No production schema, migration, or deployment is introduced.
+
+
+### Latest identity hardening — durable attempt continuity
+
+Provider delivery idempotency resolution now derives the lifecycle attempt from the durable `message_outbox.attempt_count`, rather than assuming attempt `0`. This keeps callback reconciliation aligned with the exact outbound attempt that the worker actually claimed and sent, including retry/recovery paths.
+
+The invariant is now:
+
+`durable outbox attempt → deterministic idempotency key → provider callback → canonical outbox reconciliation`
+
+No production schema, migration, or deployment is introduced.
