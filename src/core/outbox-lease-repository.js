@@ -28,15 +28,18 @@ export function createOutboxLeaseRepository(db, { workerId, leaseSeconds = 60 } 
     },
 
     async markOutboundSent(id, providerMessageId = null) {
-      await db.query(`UPDATE message_outbox SET delivery_state='SENT', provider_message_id=$2, sent_at=now(), lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$3`, [id, providerMessageId, workerId]);
+      const result = await db.query(`UPDATE message_outbox SET delivery_state='SENT', provider_message_id=$2, sent_at=now(), lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$3 RETURNING id`, [id, providerMessageId, workerId]);
+      return result.rowCount === 1;
     },
 
     async scheduleOutboundRetry(id, delaySeconds, error) {
-      await db.query(`UPDATE message_outbox SET delivery_state='RETRY', next_attempt_at=now() + ($2 * interval '1 second'), last_error=$3, lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$4`, [id, delaySeconds, error, workerId]);
+      const result = await db.query(`UPDATE message_outbox SET delivery_state='RETRY', next_attempt_at=now() + ($2 * interval '1 second'), last_error=$3, lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$4 RETURNING id`, [id, delaySeconds, error, workerId]);
+      return result.rowCount === 1;
     },
 
     async markOutboundFailed(id, error) {
-      await db.query(`UPDATE message_outbox SET delivery_state='FAILED', last_error=$2, lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$3`, [id, error, workerId]);
+      const result = await db.query(`UPDATE message_outbox SET delivery_state='FAILED', last_error=$2, lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$3 RETURNING id`, [id, error, workerId]);
+      return result.rowCount === 1;
     }
   });
 }
