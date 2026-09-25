@@ -148,3 +148,18 @@ This keeps **Verify → Parse → Normalize → Resolve → Mutate → Audit** a
 4. Obtain hosted CI evidence.
 5. Only after the evidence gates pass, evaluate the separate production migration gate for `correlation_id` and dedicated delivery identity fields.
 
+
+
+### Latest integrity hardening — terminal callback idempotency
+
+Terminal provider callbacks are now explicitly idempotent at the canonical outbox boundary:
+
+- a callback matching an already SENT or FAILED record is recognized as an existing terminal delivery;
+- no second state mutation is performed;
+- no duplicate delivery audit event is emitted;
+- the transaction still returns the canonical lifecycle as RECONCILED;
+- lifecycle audit-event validation now includes non-terminal DELIVERY_STATUS_RECONCILED.
+
+This closes an important replay surface in the single lifecycle chain: provider retry → resolve same outbox identity → terminal no-op → no duplicate mutation/audit.
+
+No production schema, migration, or deployment is introduced.
