@@ -12,14 +12,17 @@ export const LIFECYCLE_EVENT_TYPES = Object.freeze([
   'ANSWER_SERVED'
 ]);
 
-export function createLifecycleIdentity({ provider, providerMessageId, inboundId, conversationId, outboxId, attempt = 0, correlationId }) {
-  if (!provider || !providerMessageId || !inboundId || !conversationId || !outboxId || !correlationId) {
+export function createLifecycleIdentity({ provider, providerMessageId = null, inboundProviderMessageId = null, outboundProviderMessageId = null, inboundId, conversationId, outboxId, attempt = 0, correlationId }) {
+  const inboundProviderId = inboundProviderMessageId ?? providerMessageId;
+  if (!provider || !inboundProviderId || !inboundId || !conversationId || !outboxId || !correlationId) {
     throw new Error('LIFECYCLE_IDENTITY_REQUIRED');
   }
   const idempotencyKey = createDeliveryIdempotencyKey({ provider, outboundId: outboxId, conversationId, attempt });
   return Object.freeze({
     provider,
-    provider_message_id: providerMessageId,
+    provider_message_id: inboundProviderId,
+    inbound_provider_message_id: inboundProviderId,
+    outbound_provider_message_id: outboundProviderMessageId,
     inbound_id: inboundId,
     conversation_id: conversationId,
     outbox_id: outboxId,
@@ -52,7 +55,7 @@ export function assertLifecycleIntegrity({ identity, inbound, outbox, delivery, 
 
 export function reconcileProviderDelivery({ identity, providerMessageId = null, idempotencyKey = null, status }) {
   if (!identity || !status) throw new Error('RECONCILIATION_INPUT_REQUIRED');
-  if (providerMessageId && providerMessageId === identity.provider_message_id) return Object.freeze({ matched: true, by: 'PROVIDER_MESSAGE_ID', status });
+  if (providerMessageId && providerMessageId === identity.outbound_provider_message_id) return Object.freeze({ matched: true, by: 'OUTBOUND_PROVIDER_MESSAGE_ID', status });
   if (idempotencyKey && idempotencyKey === identity.idempotency_key) return Object.freeze({ matched: true, by: 'IDEMPOTENCY_KEY', status });
   return Object.freeze({ matched: false, by: null, status });
 }
