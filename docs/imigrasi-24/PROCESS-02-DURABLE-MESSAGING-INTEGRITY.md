@@ -104,3 +104,8 @@ The reference schema already contains `audit_events.correlation_id`, but the pro
 ### Identity semantic correction
 
 The lifecycle identity contract explicitly distinguishes the inbound provider message identity from the outbound provider delivery identity. Inbound `provider_message_id` remains the admission identity; outbound reconciliation must match the provider delivery ID associated with the outbox record or the deterministic idempotency key. This prevents an inbound message ID from being incorrectly reused as evidence for an outbound delivery callback.
+
+
+### Canonical PostgreSQL reconciliation persistence
+
+The provider reconciliation seam is now wired to the canonical `message_outbox` record through `createPostgresDeliveryIdentityResolver` and `createPostgresDeliveryPersistence`. Identity resolution joins the outbound record to its durable inbound record; persistence delegates through the canonical outbox repository and refuses terminal-state mutation. This remains an application-level PostgreSQL contract until hosted integration evidence is available.
