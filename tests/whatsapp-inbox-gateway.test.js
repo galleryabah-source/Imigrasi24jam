@@ -30,7 +30,7 @@ function makeHarness({ inserted = true, replayAccepted = true } = {}) {
 
 test('durable inbox is authoritative and replay store is called only after durable admission', async () => {
   const h = makeHarness();
-  const gateway = createInboxGateway(h);
+  const gateway = createInboxGateway({ ...h, nowSeconds: () => 1_000_000 });
   const result = await gateway.accept({ provider: 'whatsapp', messageId: 'M1', timestamp: 1_000_000 });
   assert.equal(result.accepted, true);
   assert.deepEqual(h.calls.map(([type]) => type), ['inbox', 'replay']);
@@ -38,7 +38,7 @@ test('durable inbox is authoritative and replay store is called only after durab
 
 test('durable duplicate is rejected without consuming replay admission', async () => {
   const h = makeHarness({ inserted: false });
-  const gateway = createInboxGateway(h);
+  const gateway = createInboxGateway({ ...h, nowSeconds: () => 1_000_000 });
   const result = await gateway.accept({ provider: 'whatsapp', messageId: 'M1', timestamp: 1_000_000 });
   assert.equal(result.accepted, false);
   assert.equal(result.reason, 'DURABLE_DUPLICATE');
