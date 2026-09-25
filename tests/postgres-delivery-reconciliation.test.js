@@ -8,7 +8,7 @@ test('postgres delivery identity resolver binds outbox to its inbound message', 
     queries.push({ sql, params });
     return { rows: [{
       outbox_id:'O1', conversation_id:'C1', provider:'wa',
-      outbound_provider_message_id:'WA-OUT-1', inbound_id:'I1',
+      outbound_provider_message_id:'WA-OUT-1', attempt_count:3, inbound_id:'I1',
       inbound_provider_message_id:'WA-IN-1'
     }] };
   }};
@@ -18,6 +18,8 @@ test('postgres delivery identity resolver binds outbox to its inbound message', 
   assert.equal(identity.inbound_provider_message_id, 'WA-IN-1');
   assert.equal(identity.outbound_provider_message_id, 'WA-OUT-1');
   assert.equal(identity.outbox_id, 'O1');
+  assert.equal(identity.attempt, 3);
+  assert.equal(identity.idempotency_key, 'wa:O1:C1:3');
   assert.match(queries[0].sql, /JOIN message_inbox/);
 });
 
