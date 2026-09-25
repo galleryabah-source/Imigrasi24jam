@@ -59,7 +59,21 @@ export function createOutboxLeaseRepository(db, { workerId, leaseSeconds = 60 } 
           )
         RETURNING id, delivery_state, provider_message_id, sent_at
       `, [outboxId, providerMessageId, idempotencyKey, deliveryState]);
-      return result.rows[0] ?? null;
+      if (result.rows[0]) return { ...result.rows[0], no_op: false };
+
+      const terminal = await db.query(`
+        SELECT id, delivery_state, provider_message_id, sent_at
+        FROM message_outbox
+        WHERE id=$1
+          AND delivery_state IN ('SENT','FAILED')
+          AND (
+            ($2 IS NOT NULL AND provider_message_id=$2)
+            OR ($3 IS NOT NULL AND last_error='IDEMPOTENCY_KEY:' || $3)
+          )
+        LIMIT 1
+      `, [outboxId, providerMessageId, idempotencyKey]);
+
+      return terminal.rows[0] ? { ...terminal.rows[0], no_op: true } : null;
     },
 
     async markOutboundFailed(id, error) {
