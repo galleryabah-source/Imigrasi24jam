@@ -25,3 +25,11 @@ test('audit event is immutable and preserves before/after values', () => {
   assert.equal(event.after_json.status, 'PUBLISHED');
   assert.equal(Object.isFrozen(event), true);
 });
+
+
+test('audit event correlation identity is deterministic and stable', () => {
+  const first = createAuditEvent({ eventType: AUDIT_EVENTS.DELIVERY_SENT, subjectType: 'MESSAGE_OUTBOX', subjectId: 'O1', correlationId: 'WA-1' });
+  const second = createAuditEvent({ eventType: AUDIT_EVENTS.DELIVERY_SENT, subjectType: 'MESSAGE_OUTBOX', subjectId: 'O1', correlationId: 'WA-1' });
+  assert.equal(first.correlation_id, second.correlation_id);
+  assert.equal(first.subject_id, second.subject_id);
+});
