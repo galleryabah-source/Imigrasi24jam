@@ -99,3 +99,8 @@ This prevents the outbox worker and WhatsApp provider contract from becoming com
 The canonical delivery reconciliation contract now normalizes provider status into the application's delivery state and resolves delivery only through the same provider message ID or deterministic idempotency identity used by the outbound lifecycle. An unmatched provider callback remains `UNMATCHED` and is not allowed to mutate lifecycle state.
 
 The reference schema already contains `audit_events.correlation_id`, but the production migration remains intentionally uncreated/unapplied. No production schema, migration, or deployment is part of this gate.
+
+
+### Identity semantic correction
+
+The lifecycle identity contract explicitly distinguishes the inbound provider message identity from the outbound provider delivery identity. Inbound `provider_message_id` remains the admission identity; outbound reconciliation must match the provider delivery ID associated with the outbox record or the deterministic idempotency key. This prevents an inbound message ID from being incorrectly reused as evidence for an outbound delivery callback.
