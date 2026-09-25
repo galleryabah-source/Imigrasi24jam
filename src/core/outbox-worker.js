@@ -1,3 +1,16 @@
+export function createDeliveryIdempotencyKey({ provider, outboundId, conversationId, attempt = 0 }) {
+  if (!provider || !outboundId || !conversationId) throw new Error('DELIVERY_IDENTITY_REQUIRED');
+  if (!Number.isInteger(attempt) || attempt < 0) throw new Error('INVALID_DELIVERY_ATTEMPT');
+  return `${provider}:${outboundId}:${conversationId}:${attempt}`;
+}
+
+export function normalizeProviderDeliveryResult(result) {
+  const providerMessageId = result?.provider_message_id ?? null;
+  const idempotencyKey = result?.idempotency_key ?? null;
+  if (!providerMessageId && !idempotencyKey) throw new Error('PROVIDER_DELIVERY_IDENTITY_REQUIRED');
+  return Object.freeze({ provider_message_id: providerMessageId, idempotency_key: idempotencyKey });
+}
+
 export const RETRY_DELAYS_SECONDS = Object.freeze([30, 120, 600, 1800, 3600]);
 
 export function calculateRetry(attemptCount) {
@@ -16,8 +29,10 @@ export function createOutboxWorker({ repository, provider }) {
       const job = await repository.claimPendingOutbound();
       if (!job) return Object.freeze({ status: 'IDLE' });
       try {
-        const result = await provider.send(job.payload_json);
-        const committed = await repository.markOutboundSent(job.id, result?.provider_message_id ?? null);
+        const idempotencyKey = createDeliveryIdempotencyKey({ provider: job.provider, outboundId: job.id, conversationId: job.conversation_id, attempt: job.attempt_count });
+        const result = await provider.send({ ...job.payload_json, idempotency_key: idempotencyKey });
+        const delivery = normalizeProviderDeliveryResult(result);
+        const committed = await repository.markOutboundSent(job.id, delivery.provider_message_id, delivery.idempotency_key);
         if (committed === false) return Object.freeze({ status: 'LEASE_LOST', id: job.id });
         return Object.freeze({ status: 'SENT', id: job.id });
       } catch (error) {
