@@ -16,7 +16,8 @@ test('worker cannot finalize a job it does not own', async () => {
   const queries = [];
   const db = { async query(q, params) { queries.push({ q, params }); return { rows: [] }; } };
   const repo = createOutboxLeaseRepository(db, { workerId:'W2' });
-  await repo.markOutboundSent('O1', 'P1');
-  assert.match(queries[0].q, /lease_owner=\$3/);
-  assert.equal(queries[0].params[2], 'W2');
+  await repo.markOutboundSent('O1', 'P1', 'wa:O1:C1:0');
+  assert.match(queries[0].q, /lease_owner=\$4/);
+  assert.equal(queries[0].params[2], 'wa:O1:C1:0');
+  assert.equal(queries[0].params[3], 'W2');
 });
