@@ -11,6 +11,7 @@ export function createPostgresDeliveryIdentityResolver(db, { provider } = {}) {
         o.conversation_id,
         o.provider,
         o.provider_message_id AS outbound_provider_message_id,
+        o.attempt_count,
         o.reply_to_message_id AS inbound_id,
         i.provider_message_id AS inbound_provider_message_id
       FROM message_outbox o
@@ -35,7 +36,7 @@ export function createPostgresDeliveryIdentityResolver(db, { provider } = {}) {
       inboundId: row.inbound_id,
       conversationId: row.conversation_id,
       outboxId: row.outbox_id,
-      attempt: 0,
+      attempt: Number(row.attempt_count ?? 0),
       correlationId
     });
   };
