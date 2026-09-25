@@ -1,4 +1,4 @@
-export async function claimAndProcessInbound(db, { provider, providerMessageId, conversationId, sender, payload }, process) {
+export async function claimAndProcessInbound(db, { provider, providerMessageId, conversationId, sender, payload, correlationId = providerMessageId }, process) {
   if (!db || typeof db.transaction !== 'function') throw new Error('TRANSACTION_REQUIRED');
   if (typeof process !== 'function') throw new Error('PROCESSOR_REQUIRED');
 
@@ -10,10 +10,13 @@ export async function claimAndProcessInbound(db, { provider, providerMessageId, 
       RETURNING id, conversation_id, provider_message_id
     `, [provider, providerMessageId, conversationId, sender, payload ?? {}]);
 
-    if (!inserted.rows.length) return Object.freeze({ status: 'DUPLICATE', created: false });
+    if (!inserted.rows.length) {
+      if (typeof process.onDuplicate === 'function') await process.onDuplicate({ provider, providerMessageId, conversationId, correlationId });
+      return Object.freeze({ status: 'DUPLICATE', created: false });
+    }
 
     const inbound = inserted.rows[0];
-    const outboundPayload = await process(inbound);
+    const outboundPayload = await process(inbound, { correlationId });
     const outbound = await tx.query(`
       INSERT INTO message_outbox (conversation_id, reply_to_message_id, provider, payload_json)
       VALUES ($1,$2,$3,$4)
