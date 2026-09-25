@@ -38,3 +38,17 @@ test('provider failure schedules retry without rerunning core', async () => {
   assert.deepEqual(await worker.processOne(), { status:'RETRY', id:'O2', delay_seconds:30 });
   assert.deepEqual(calls, [['retry','O2',30]]);
 });
+
+
+test('worker does not report delivery state committed after losing lease ownership', async () => {
+  const worker = createOutboxWorker({
+    repository: {
+      async claimPendingOutbound(){ return { id:'O3', attempt_count:0, payload_json:{ text:'lease' } }; },
+      async markOutboundSent(){ return false; },
+      async scheduleOutboundRetry(){ return false; },
+      async markOutboundFailed(){ return false; }
+    },
+    provider: { async send(){ return { provider_message_id:'P3' }; } }
+  });
+  assert.deepEqual(await worker.processOne(), { status:'LEASE_LOST', id:'O3' });
+});
