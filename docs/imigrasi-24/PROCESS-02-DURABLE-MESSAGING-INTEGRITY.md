@@ -124,3 +124,27 @@ The provider callback path is now composed as one application workflow: provider
 ### Canonical verified WhatsApp webhook entry
 
 The inbound delivery-status callback now has a single verified entry point: webhook verification → provider status parsing → durable lifecycle identity resolution → canonical outbox mutation → audit, within the existing transaction boundary. Verification failure terminates before parsing or database work. This keeps provider security, delivery state, identity, and audit inside the same application lifecycle rather than allowing a separate callback subsystem.
+
+
+## Latest integrated hardening — canonical provider callback normalization
+
+Process 02 callback handling is now kept on the same lifecycle contract rather than maintaining a second delivery-state interpretation:
+
+- provider callback status is normalized through `normalizeProviderDeliveryStatus()`;
+- `ACCEPTED` remains `PROCESSING`;
+- `SENT`, `DELIVERED`, and `READ` converge to `SENT`;
+- `FAILED` converges to `FAILED`;
+- unknown provider status is rejected before canonical outbox mutation or audit;
+- callback tests cover matched, unmatched, accepted, failed, and invalid-status paths;
+- audit classification distinguishes a true `DELIVERY_SENT` terminal transition from a non-terminal `DELIVERY_STATUS_RECONCILED` event.
+
+This keeps **Verify → Parse → Normalize → Resolve → Mutate → Audit** as one application flow. No production schema, migration, or deployment is introduced by this hardening.
+
+### Remaining Process 02 evidence gates
+
+1. Execute the complete unit/static suite in a healthy runner.
+2. Execute PostgreSQL integration against the reference/test schema.
+3. Add/verify composed WhatsApp webhook E2E coverage, including duplicate/terminal callback behavior and transaction rollback.
+4. Obtain hosted CI evidence.
+5. Only after the evidence gates pass, evaluate the separate production migration gate for `correlation_id` and dedicated delivery identity fields.
+
