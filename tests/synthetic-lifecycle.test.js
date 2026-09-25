@@ -32,10 +32,13 @@ test('synthetic lifecycle fails atomically before integrity completion', async (
   assert.deepEqual(commits, ['ROLLBACK']);
 });
 
-test('synthetic lifecycle rejects provider callbacks that do not match identity', async () => {
-  await assert.rejects(
-    () => runSyntheticMessageLifecycle({ transaction:fakeTransaction, providerStatus:'DELIVERED' })
-      .then(() => null),
-    /^(?!.)/
-  ).catch(() => {});
+test('synthetic lifecycle rejects an unmatched provider callback', async () => {
+  const { createLifecycleIdentity } = await import('../src/core/lifecycle-integrity.js');
+  const { reconcileDeliveryStatus } = await import('../src/core/delivery-reconciliation.js');
+  const identity = createLifecycleIdentity({
+    provider:'wa', providerMessageId:'WA-IN-001', inboundId:'I-001',
+    conversationId:'C-001', outboxId:'O-001', attempt:0, correlationId:'SYNTH-WA-001'
+  });
+  const result = reconcileDeliveryStatus({ identity, providerMessageId:'WA-UNKNOWN', status:'DELIVERED' });
+  assert.equal(result.matched, false);
 });
