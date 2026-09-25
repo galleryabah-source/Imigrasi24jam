@@ -47,6 +47,7 @@ Setelah admission, pemrosesan harus mempertahankan satu identitas pesan dan conv
 - [ ] Production audit migration for the lifecycle correlation contract
 - [x] Provider delivery receives a deterministic idempotency identity and requires provider delivery identity before state commit
 - [x] Unified lifecycle integrity contract rejects competing message/conversation/outbox identities
+- [x] WhatsApp delivery uses one canonical provider delivery seam
 - [ ] Provider delivery has a verified external reconciliation contract
 - [x] Test regression untuk admission ordering
 - [ ] Hosted CI runner sehat
@@ -76,6 +77,12 @@ The application-level integrity contract is implemented in `src/core/lifecycle-i
 - provider reconciliation may match only by an explicit provider delivery identity or the deterministic idempotency identity.
 
 This is an application-level gate only. It does **not** claim external WhatsApp exactly-once delivery or production reconciliation until a real provider adapter/webhook is verified.
+
+### Canonical provider delivery seam
+
+The outbox worker now depends on one generic `provider.send()` seam, implemented for WhatsApp by `src/integrations/whatsapp/delivery-adapter.js`. The adapter is the only bridge to the provider contract's `sendText()` / `sendAttachment()` methods and preserves the same deterministic idempotency identity into provider delivery results.
+
+This prevents the outbox worker and WhatsApp provider contract from becoming competing delivery abstractions. Attachment delivery is intentionally limited to one attachment per outbound message until an explicit provider batch contract exists.
 
 ### Current boundary
 
