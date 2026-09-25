@@ -9,7 +9,8 @@ const identity = createLifecycleIdentity({
   conversationId:'C-100',
   outboxId:'O-100',
   attempt:0,
-  correlationId:'WA-100'
+  correlationId:'WA-100',
+  outboundProviderMessageId:'WA-OUT-100'
 });
 
 test('unified lifecycle identity binds inbound, conversation, outbox and delivery', () => {
@@ -44,10 +45,10 @@ test('lifecycle rejects competing inbound or outbox identity', () => {
 });
 
 test('provider reconciliation matches only deterministic lifecycle identity', () => {
-  assert.deepEqual(reconcileProviderDelivery({ identity, providerMessageId:'P-200', idempotencyKey:null, status:'DELIVERED' }), {
+  assert.deepEqual(reconcileProviderDelivery({ identity, providerMessageId:'WA-OUT-999', idempotencyKey:null, status:'DELIVERED' }), {
     matched:false, by:null, status:'DELIVERED'
   });
-  assert.deepEqual(reconcileProviderDelivery({ identity, providerMessageId:null, idempotencyKey:'wa:O-100:C-100:0', status:'DELIVERED' }), {
+  assert.deepEqual(reconcileProviderDelivery({ identity, providerMessageId:'WA-OUT-100', idempotencyKey:null, status:'DELIVERED' }), {
     matched:true, by:'IDEMPOTENCY_KEY', status:'DELIVERED'
   });
 });
