@@ -48,7 +48,8 @@ Setelah admission, pemrosesan harus mempertahankan satu identitas pesan dan conv
 - [x] Provider delivery receives a deterministic idempotency identity and requires provider delivery identity before state commit
 - [x] Unified lifecycle integrity contract rejects competing message/conversation/outbox identities
 - [x] WhatsApp delivery uses one canonical provider delivery seam
-- [ ] Provider delivery has a verified external reconciliation contract
+- [x] Application-level provider delivery reconciliation contract exists
+- [ ] External provider delivery reconciliation is verified end-to-end
 - [x] Test regression untuk admission ordering
 - [ ] Hosted CI runner sehat
 - [ ] PostgreSQL integration suite PASS di hosted CI
@@ -85,5 +86,7 @@ The outbox worker now depends on one generic `provider.send()` seam, implemented
 This prevents the outbox worker and WhatsApp provider contract from becoming competing delivery abstractions. Attachment delivery is intentionally limited to one attachment per outbound message until an explicit provider batch contract exists.
 
 ### Current boundary
+
+The canonical delivery reconciliation contract now normalizes provider status into the application's delivery state and resolves delivery only through the same provider message ID or deterministic idempotency identity used by the outbound lifecycle. An unmatched provider callback remains `UNMATCHED` and is not allowed to mutate lifecycle state.
 
 The reference schema already contains `audit_events.correlation_id`, but the production migration remains intentionally uncreated/unapplied. No production schema, migration, or deployment is part of this gate.
