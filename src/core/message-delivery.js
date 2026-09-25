@@ -1,5 +1,13 @@
 export const DELIVERY_STATES = Object.freeze(['PENDING','PROCESSING','SENT','RETRY','FAILED']);
 
+const DELIVERY_TRANSITIONS = Object.freeze({
+  PENDING: Object.freeze({ SEND: 'PROCESSING', RETRY: 'RETRY' }),
+  PROCESSING: Object.freeze({ SUCCESS: 'SENT', FAILURE: 'RETRY' }),
+  RETRY: Object.freeze({ SEND: 'PROCESSING', GIVE_UP: 'FAILED' }),
+  SENT: Object.freeze({}),
+  FAILED: Object.freeze({})
+});
+
 export function createInboundMessage({ provider, providerMessageId, conversationId, sender, text, receivedAt = new Date().toISOString() }) {
   if (!provider || !providerMessageId || !conversationId || !sender) throw new Error('INBOUND_MESSAGE_IDENTITY_REQUIRED');
   return Object.freeze({ provider, provider_message_id: providerMessageId, conversation_id: conversationId, sender, text: String(text ?? ''), received_at: receivedAt, status: 'RECEIVED' });
@@ -11,12 +19,7 @@ export function createOutboundMessage({ conversationId, replyToMessageId, text, 
 }
 
 export function nextDeliveryState(current, event) {
-  const transitions = {
-    PENDING: { SEND: 'PROCESSING', RETRY: 'RETRY' },
-    PROCESSING: { SUCCESS: 'SENT', FAILURE: 'RETRY' },
-    RETRY: { SEND: 'PROCESSING', GIVE_UP: 'FAILED' }
-  };
-  const next = transitions[current]?.[event];
+  const next = DELIVERY_TRANSITIONS[current]?.[event];
   if (!next) throw new Error('INVALID_DELIVERY_TRANSITION');
   return next;
 }
