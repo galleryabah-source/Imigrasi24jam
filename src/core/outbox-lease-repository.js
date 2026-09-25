@@ -27,8 +27,8 @@ export function createOutboxLeaseRepository(db, { workerId, leaseSeconds = 60 } 
       return result.rows[0] ?? null;
     },
 
-    async markOutboundSent(id, providerMessageId = null) {
-      const result = await db.query(`UPDATE message_outbox SET delivery_state='SENT', provider_message_id=$2, sent_at=now(), lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$3 RETURNING id`, [id, providerMessageId, workerId]);
+    async markOutboundSent(id, providerMessageId = null, idempotencyKey = null) {
+      const result = await db.query(`UPDATE message_outbox SET delivery_state='SENT', provider_message_id=$2, last_error=CASE WHEN $3 IS NULL THEN last_error ELSE 'IDEMPOTENCY_KEY:' || $3 END, sent_at=now(), lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$4 RETURNING id`, [id, providerMessageId, idempotencyKey, workerId]);
       return result.rowCount === 1;
     },
 
