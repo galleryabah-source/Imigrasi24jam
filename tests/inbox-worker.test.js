@@ -10,7 +10,7 @@ function fakeDb() {
 
 test('inbound processing and outbox enqueue share one transaction', async () => {
   const db = fakeDb(); let runs = 0;
-  const result = await claimAndProcessInbound(db, { provider:'whatsapp', providerMessageId:'M1', conversationId:'C1', sender:'U1', payload:{ text:'hi' } }, async () => { runs++; return { text:'reply' }; });
+  const result = await claimAndProcessInbound(db, { provider:'whatsapp', providerMessageId:'M1', conversationId:'C1', sender:'U1', payload:{ text:'hi' }, correlationId:'C1-M1' }, async () => { runs++; return { text:'reply' }; });
   assert.equal(result.status, 'PROCESSED');
   assert.equal(runs, 1);
   assert.equal(db.calls.filter((x) => x.includes('INSERT INTO')).length, 2);
@@ -18,10 +18,11 @@ test('inbound processing and outbox enqueue share one transaction', async () => 
 
 test('duplicate inbound is not processed', async () => {
   const db = fakeDb(); db.transaction = async (fn) => fn({ async query(sql) { if (sql.includes('INSERT INTO message_inbox')) return { rows:[] }; throw new Error('must not continue'); } });
-  let runs = 0;
-  const result = await claimAndProcessInbound(db, { provider:'whatsapp', providerMessageId:'M1', conversationId:'C1', sender:'U1' }, async () => { runs++; return {}; });
+  let runs = 0; let duplicates = 0;
+  const result = await claimAndProcessInbound(db, { provider:'whatsapp', providerMessageId:'M1', conversationId:'C1', sender:'U1' }, Object.assign(async () => { runs++; return {}; }, { onDuplicate: async () => { duplicates++; } }));
   assert.equal(result.status, 'DUPLICATE');
   assert.equal(runs, 0);
+  assert.equal(duplicates, 1);
 });
 
 
