@@ -37,6 +37,31 @@ export function createOutboxLeaseRepository(db, { workerId, leaseSeconds = 60 } 
       return result.rowCount === 1;
     },
 
+    async reconcileProviderDelivery({ outboxId, providerMessageId = null, idempotencyKey = null, deliveryState }) {
+      if (!outboxId || !deliveryState) throw new Error('DELIVERY_RECONCILIATION_INPUT_REQUIRED');
+      if (!['PROCESSING', 'SENT', 'FAILED'].includes(deliveryState)) throw new Error('INVALID_RECONCILIATION_STATE');
+      const result = await db.query(`
+        UPDATE message_outbox
+        SET delivery_state=$4,
+            provider_message_id=COALESCE(provider_message_id, $2),
+            sent_at=CASE WHEN $4='SENT' THEN COALESCE(sent_at, now()) ELSE sent_at END,
+            last_error=CASE
+              WHEN $3 IS NULL THEN last_error
+              ELSE 'IDEMPOTENCY_KEY:' || $3
+            END,
+            lease_owner=CASE WHEN $4 IN ('SENT','FAILED') THEN NULL ELSE lease_owner END,
+            lease_expires_at=CASE WHEN $4 IN ('SENT','FAILED') THEN NULL ELSE lease_expires_at END
+        WHERE id=$1
+          AND delivery_state NOT IN ('SENT','FAILED')
+          AND (
+            ($2 IS NOT NULL AND provider_message_id=$2)
+            OR ($3 IS NOT NULL AND last_error='IDEMPOTENCY_KEY:' || $3)
+          )
+        RETURNING id, delivery_state, provider_message_id, sent_at
+      `, [outboxId, providerMessageId, idempotencyKey, deliveryState]);
+      return result.rows[0] ?? null;
+    },
+
     async markOutboundFailed(id, error) {
       const result = await db.query(`UPDATE message_outbox SET delivery_state='FAILED', last_error=$2, lease_owner=NULL, lease_expires_at=NULL WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$3 RETURNING id`, [id, error, workerId]);
       return result.rowCount === 1;
