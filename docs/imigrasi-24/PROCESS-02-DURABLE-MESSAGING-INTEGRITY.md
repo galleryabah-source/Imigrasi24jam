@@ -198,3 +198,10 @@ The lifecycle therefore remains:
 `Verify → Parse → Normalize → Resolve → Mutate → Canonical Audit Repository → Commit`
 
 This reduces the risk of divergent audit persistence semantics across message lifecycle paths. It remains application-level evidence; hosted CI, PostgreSQL execution, and external WhatsApp verification are still required before merge readiness is declared.
+
+
+### Latest CI infrastructure hardening
+
+The three repository workflows used for the integrated evidence chain are now pinned to `ubuntu-24.04` rather than `ubuntu-latest`. The change is intentionally limited to runner determinism; application behavior, database schema, migrations, and production deployment boundaries are unchanged.
+
+Previous hosted runs terminated with job-level failure and zero executed steps. Because no step/log evidence was available, those failures were not interpreted as application test failures. The runner pin is the next evidence-gathering action before any application change is inferred.
