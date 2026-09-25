@@ -119,3 +119,8 @@ Delivery callback reconciliation is now modeled as an atomic workflow: resolve t
 ### Canonical provider callback composition
 
 The provider callback path is now composed as one application workflow: provider status parsing → durable identity resolution → canonical `message_outbox` reconciliation → delivery audit, all inside one database transaction. The callback entry point does not own a parallel delivery state. Unknown callbacks terminate as `UNMATCHED` before mutation or audit. This is application-level wiring; real provider webhook and hosted PostgreSQL evidence remain pending.
+
+
+### Canonical verified WhatsApp webhook entry
+
+The inbound delivery-status callback now has a single verified entry point: webhook verification → provider status parsing → durable lifecycle identity resolution → canonical outbox mutation → audit, within the existing transaction boundary. Verification failure terminates before parsing or database work. This keeps provider security, delivery state, identity, and audit inside the same application lifecycle rather than allowing a separate callback subsystem.
