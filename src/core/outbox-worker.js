@@ -36,6 +36,7 @@ export function createOutboxWorker({ repository, provider }) {
         if (committed === false) return Object.freeze({ status: 'LEASE_LOST', id: job.id });
         return Object.freeze({ status: 'SENT', id: job.id });
       } catch (error) {
+        if (error?.message === 'PROVIDER_DELIVERY_IDENTITY_REQUIRED') throw error;
         const retry = calculateRetry(job.attempt_count);
         if (retry.terminal) {
           const committed = await repository.markOutboundFailed(job.id, String(error?.message ?? error));
