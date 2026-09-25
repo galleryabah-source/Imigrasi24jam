@@ -16,6 +16,10 @@ export async function runTransactionalDeliveryReconciliation(db, workflow) {
       return Object.freeze({ status: 'UNMATCHED', identity, result, audit: [] });
     }
 
+    if (result.no_op === true) {
+      return Object.freeze({ status: 'RECONCILED', identity, result, audit: [] });
+    }
+
     const audit = await workflow.writeAudit(tx, {
       identity,
       result,
