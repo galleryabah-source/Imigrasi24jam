@@ -17,15 +17,18 @@ export function createOutboxWorker({ repository, provider }) {
       if (!job) return Object.freeze({ status: 'IDLE' });
       try {
         const result = await provider.send(job.payload_json);
-        await repository.markOutboundSent(job.id, result?.provider_message_id ?? null);
+        const committed = await repository.markOutboundSent(job.id, result?.provider_message_id ?? null);
+        if (committed === false) return Object.freeze({ status: 'LEASE_LOST', id: job.id });
         return Object.freeze({ status: 'SENT', id: job.id });
       } catch (error) {
         const retry = calculateRetry(job.attempt_count);
         if (retry.terminal) {
-          await repository.markOutboundFailed(job.id, String(error?.message ?? error));
+          const committed = await repository.markOutboundFailed(job.id, String(error?.message ?? error));
+          if (committed === false) return Object.freeze({ status: 'LEASE_LOST', id: job.id });
           return Object.freeze({ status: 'FAILED', id: job.id });
         }
-        await repository.scheduleOutboundRetry(job.id, retry.delay_seconds, String(error?.message ?? error));
+        const committed = await repository.scheduleOutboundRetry(job.id, retry.delay_seconds, String(error?.message ?? error));
+        if (committed === false) return Object.freeze({ status: 'LEASE_LOST', id: job.id });
         return Object.freeze({ status: 'RETRY', id: job.id, delay_seconds: retry.delay_seconds });
       }
     }
