@@ -46,3 +46,43 @@ test('delivery audit preserves the same lifecycle correlation identity', () => {
   assert.equal(event.correlation_id, 'CORR-1');
   assert.equal(event.after_json.outbound_provider_message_id, 'WA-OUT-1');
 });
+
+
+test('delivery reconciliation rolls back state and audit together on audit failure', async () => {
+  const events = [];
+  const db = {
+    transaction: async (fn) => {
+      try {
+        const result = await fn({});
+        events.push('COMMIT');
+        return result;
+      } catch (error) {
+        events.push('ROLLBACK');
+        throw error;
+      }
+    }
+  };
+  await assert.rejects(
+    () => runTransactionalDeliveryReconciliation(db, {
+      resolveIdentity: async () => identity,
+      reconcile: async () => ({ matched:true, normalized:{ provider_status:'DELIVERED', delivery_state:'SENT' } }),
+      writeAudit: async () => { throw new Error('AUDIT_WRITE_FAILED'); }
+    }),
+    /AUDIT_WRITE_FAILED/
+  );
+  assert.deepEqual(events, ['ROLLBACK']);
+});
+
+test('reconciliation does not mutate when callback identity is unmatched', async () => {
+  const calls = [];
+  const result = await runTransactionalDeliveryReconciliation(
+    { transaction: async (fn) => fn({}) },
+    {
+      resolveIdentity: async () => null,
+      reconcile: async () => { calls.push('reconcile'); },
+      writeAudit: async () => { calls.push('audit'); }
+    }
+  );
+  assert.equal(result.status, 'UNMATCHED');
+  assert.deepEqual(calls, []);
+});
