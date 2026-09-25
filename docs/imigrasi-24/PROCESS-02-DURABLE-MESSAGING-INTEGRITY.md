@@ -37,6 +37,8 @@ Setelah admission, pemrosesan harus mempertahankan satu identitas pesan dan conv
 - [x] Duplicate tidak memicu processing
 - [x] Conversation transition graph rejects illegal state changes
 - [x] Outbox worker detects loss of lease ownership
+- [x] Outbox uses durable inbound conversation identity
+- [x] Delivery state machine rejects transitions after SENT/FAILED
 - [x] Test regression untuk admission ordering
 - [ ] Hosted CI runner sehat
 - [ ] PostgreSQL integration suite PASS di hosted CI
