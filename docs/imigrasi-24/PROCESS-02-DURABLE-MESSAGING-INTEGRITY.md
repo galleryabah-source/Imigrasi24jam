@@ -49,6 +49,7 @@ Setelah admission, pemrosesan harus mempertahankan satu identitas pesan dan conv
 - [x] Unified lifecycle integrity contract rejects competing message/conversation/outbox identities
 - [x] WhatsApp delivery uses one canonical provider delivery seam
 - [x] Application-level provider delivery reconciliation contract exists
+- [x] Full synthetic lifecycle integrity harness covers inbound → conversation → outbox → reconciliation → audit
 - [ ] External provider delivery reconciliation is verified end-to-end
 - [x] Test regression untuk admission ordering
 - [ ] Hosted CI runner sehat
@@ -78,6 +79,14 @@ The application-level integrity contract is implemented in `src/core/lifecycle-i
 - provider reconciliation may match only by an explicit provider delivery identity or the deterministic idempotency identity.
 
 This is an application-level gate only. It does **not** claim external WhatsApp exactly-once delivery or production reconciliation until a real provider adapter/webhook is verified.
+
+### Full synthetic lifecycle integrity harness
+
+A deterministic synthetic harness now exercises the complete application identity chain in one transaction-shaped execution:
+
+`inbound → conversation → outbox → reconciliation → audit → integrity assertion`
+
+It verifies one correlation identity and deterministic delivery idempotency identity across the chain, verifies rollback on a synthetic audit failure, and verifies unmatched provider callbacks do not reconcile. This is a deterministic application test harness; it is not evidence of real WhatsApp delivery or hosted PostgreSQL execution.
 
 ### Canonical provider delivery seam
 
