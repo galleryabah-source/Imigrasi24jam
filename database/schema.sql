@@ -112,8 +112,7 @@ CREATE TABLE approvals (
   decision text NOT NULL CHECK (decision IN ('APPROVED','REJECTED','RETURNED')),
   reviewer_id uuid NOT NULL,
   reason text,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  correlation_id text
+  created_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE document_validations (
@@ -136,6 +135,7 @@ CREATE TABLE audit_events (
   before_json jsonb,
   after_json jsonb,
   reason text,
+  correlation_id text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
