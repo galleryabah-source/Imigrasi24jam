@@ -8,6 +8,7 @@ export function createReplayGuard({ store, windowSeconds = 300 }) {
   if (!Number.isInteger(windowSeconds) || windowSeconds <= 0) throw new Error('INVALID_REPLAY_WINDOW');
 
   return Object.freeze({
+    windowSeconds,
     async accept({ provider, messageId, timestamp, nowSeconds = Math.floor(Date.now() / 1000) }) {
       if (!provider || !messageId || !isReplayTimestampFresh({ timestamp, nowSeconds, windowSeconds })) return false;
       const key = `${provider}:${messageId}`;
