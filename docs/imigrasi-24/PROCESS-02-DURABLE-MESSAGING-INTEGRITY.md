@@ -35,6 +35,8 @@ Setelah admission, pemrosesan harus mempertahankan satu identitas pesan dan conv
 - [x] Replay freshness validation terpisah dari durable admission
 - [x] Replay store tidak dikonsumsi sebelum durable insert
 - [x] Duplicate tidak memicu processing
+- [x] Conversation transition graph rejects illegal state changes
+- [x] Outbox worker detects loss of lease ownership
 - [x] Test regression untuk admission ordering
 - [ ] Hosted CI runner sehat
 - [ ] PostgreSQL integration suite PASS di hosted CI
