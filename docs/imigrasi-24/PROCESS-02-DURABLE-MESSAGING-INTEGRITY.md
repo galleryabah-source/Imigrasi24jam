@@ -39,6 +39,8 @@ Setelah admission, pemrosesan harus mempertahankan satu identitas pesan dan conv
 - [x] Outbox worker detects loss of lease ownership
 - [x] Outbox uses durable inbound conversation identity
 - [x] Delivery state machine rejects transitions after SENT/FAILED
+- [x] Audit contract covers inbound → conversation → outbox → delivery lifecycle events
+- [x] Lifecycle correlation identity is propagated through inbound processing
 - [x] Test regression untuk admission ordering
 - [ ] Hosted CI runner sehat
 - [ ] PostgreSQL integration suite PASS di hosted CI
