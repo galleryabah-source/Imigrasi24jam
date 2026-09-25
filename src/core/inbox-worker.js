@@ -18,7 +18,7 @@ export async function claimAndProcessInbound(db, { provider, providerMessageId, 
       INSERT INTO message_outbox (conversation_id, reply_to_message_id, provider, payload_json)
       VALUES ($1,$2,$3,$4)
       RETURNING id, delivery_state
-    `, [conversationId, inbound.id, provider, outboundPayload ?? {}]);
+    `, [inbound.conversation_id, inbound.id, provider, outboundPayload ?? {}]);
 
     await tx.query(`UPDATE message_inbox SET processing_status='PROCESSED', processed_at=now() WHERE id=$1`, [inbound.id]);
     return Object.freeze({ status: 'PROCESSED', created: true, inbound_id: inbound.id, outbox_id: outbound.rows[0].id });
