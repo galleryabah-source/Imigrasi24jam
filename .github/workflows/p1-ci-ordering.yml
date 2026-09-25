@@ -1,0 +1,65 @@
+name: Imigrasi24jam P1 CI Ordering
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'phase0-*', 'process-*']
+  workflow_dispatch:
+
+concurrency:
+  group: imigrasi24-p1-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  syntax-and-unit:
+    name: P1 / Syntax + Unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install
+      - name: Syntax check
+        run: npm run check
+      - name: Unit regression
+        run: npm test
+
+  postgres-integration:
+    name: P1 / PostgreSQL Integration
+    needs: syntax-and-unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: imigrasi24jam_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d imigrasi24jam_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/imigrasi24jam_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm install
+      - name: Verify migration inventory
+        run: npm run verify:migrations
+      - name: Apply test migrations
+        run: npm run migrate:test
+      - name: Verify schema
+        run: node --test tests/migration-schema.test.js
+      - name: PostgreSQL integration suite
+        run: npm run test:db
