@@ -174,3 +174,16 @@ The invariant is now:
 `durable outbox attempt → deterministic idempotency key → provider callback → canonical outbox reconciliation`
 
 No production schema, migration, or deployment is introduced.
+
+
+## Latest hardening — integrated static and composed webhook gate
+
+The canonical lifecycle is now treated as one executable chain rather than a collection of isolated modules.
+
+Static coverage has been expanded so `npm run check` includes the complete messaging/delivery path:
+`lifecycle integrity → delivery normalization → PostgreSQL identity resolution → transactional reconciliation → provider callback → WhatsApp webhook → delivery adapter`.
+
+A composed webhook regression suite also covers the chain:
+`verify → parse → normalize → resolve → mutate → audit → commit`, including canonical provider statuses, terminal callback idempotency, invalid-status rejection, lifecycle correlation/idempotency continuity, and rollback when audit persistence fails.
+
+This remains test/application-level evidence only. It does not establish hosted CI PASS, production schema readiness, production migration readiness, or real external WhatsApp provider E2E.
