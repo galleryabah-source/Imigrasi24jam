@@ -43,9 +43,10 @@ Setelah admission, pemrosesan harus mempertahankan satu identitas pesan dan conv
 - [x] Lifecycle correlation identity is propagated through inbound processing
 - [x] Deterministic core emits a unified lifecycle trace for the same correlation identity
 - [x] Transactional message lifecycle contract binds admission → conversation → outbox → audit to one DB transaction
-- [x] Transactional message lifecycle contract binds admission → conversation → outbox → audit to one DB transaction
-- [ ] Persisted audit trail accepts the lifecycle correlation contract without schema mismatch
+- [x] Reference audit schema accepts the lifecycle correlation contract without schema mismatch
+- [ ] Production audit migration for the lifecycle correlation contract
 - [x] Provider delivery receives a deterministic idempotency identity and requires provider delivery identity before state commit
+- [x] Unified lifecycle integrity contract rejects competing message/conversation/outbox identities
 - [ ] Provider delivery has a verified external reconciliation contract
 - [x] Test regression untuk admission ordering
 - [ ] Hosted CI runner sehat
