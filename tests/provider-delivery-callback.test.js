@@ -65,3 +65,35 @@ test('unknown provider delivery status is rejected before mutation', async () =>
   assert.equal(queries.some((q)=>/UPDATE message_outbox/.test(q.sql)),false);
   assert.equal(queries.some((q)=>/INSERT INTO audit_events/.test(q.sql)),false);
 });
+
+
+test('duplicate terminal provider callback is idempotent and does not create a second audit event', async () => {
+  const {db,queries}=makeDb();
+  const originalQuery=db.transaction;
+  db.transaction=async(fn)=>fn({
+    async query(sql, params=[]) {
+      queries.push({sql,params});
+      if(/FROM message_outbox/.test(sql)) return {rows:[{
+        outbox_id:'O1',conversation_id:'C1',provider:'wa',
+        outbound_provider_message_id:'WA-OUT-1',inbound_id:'I1',
+        inbound_provider_message_id:'WA-IN-1'
+      }]};
+      if(/UPDATE message_outbox/.test(sql)) return {rows:[]};
+      if(/SELECT id, delivery_state/.test(sql)) return {rows:[{
+        id:'O1',delivery_state:'SENT',provider_message_id:'WA-OUT-1'
+      }]};
+      if(/INSERT INTO audit_events/.test(sql)) throw new Error('DUPLICATE_AUDIT_SHOULD_NOT_RUN');
+      throw new Error('UNEXPECTED_SQL');
+    }
+  });
+  const result=await reconcileProviderCallbackTransaction(db,{
+    provider:'wa',
+    parseDeliveryStatus:async()=>({status:'DELIVERED',provider_message_id:'WA-OUT-1'}),
+    request:{}
+  });
+  assert.equal(result.status,'RECONCILED');
+  assert.equal(result.result.no_op,true);
+  assert.equal(result.audit.length,0);
+  assert.equal(queries.some((q)=>/INSERT INTO audit_events/.test(q.sql)),false);
+  db.transaction=originalQuery;
+});
