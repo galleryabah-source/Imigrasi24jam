@@ -41,6 +41,9 @@ Setelah admission, pemrosesan harus mempertahankan satu identitas pesan dan conv
 - [x] Delivery state machine rejects transitions after SENT/FAILED
 - [x] Audit contract covers inbound → conversation → outbox → delivery lifecycle events
 - [x] Lifecycle correlation identity is propagated through inbound processing
+- [x] Deterministic core emits a unified lifecycle trace for the same correlation identity
+- [ ] Persisted audit trail accepts the lifecycle correlation contract without schema mismatch
+- [ ] Provider delivery has a verified idempotency/reconciliation contract
 - [x] Test regression untuk admission ordering
 - [ ] Hosted CI runner sehat
 - [ ] PostgreSQL integration suite PASS di hosted CI
@@ -48,4 +51,4 @@ Setelah admission, pemrosesan harus mempertahankan satu identitas pesan dan conv
 
 ## Urutan berikutnya
 
-Process 02 dilanjutkan dengan audit **Conversation State → Outbox Atomicity → Lease Ownership → Provider Delivery → Delivery Status → Audit**, tanpa memecahnya menjadi sistem-sistem terpisah.
+Process 02 dilanjutkan dengan **transactional audit persistence dan provider delivery idempotency/reconciliation**. Keduanya harus diselesaikan sebagai bagian dari rantai yang sama, bukan sebagai modul terpisah. Saat ini database reference schema belum memiliki `correlation_id` pada `audit_events`, sehingga persistence belum boleh dinyatakan compatible hanya berdasarkan kontrak aplikasi.
