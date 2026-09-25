@@ -187,3 +187,14 @@ A composed webhook regression suite also covers the chain:
 `verify → parse → normalize → resolve → mutate → audit → commit`, including canonical provider statuses, terminal callback idempotency, invalid-status rejection, lifecycle correlation/idempotency continuity, and rollback when audit persistence fails.
 
 This remains test/application-level evidence only. It does not establish hosted CI PASS, production schema readiness, production migration readiness, or real external WhatsApp provider E2E.
+
+
+### Latest integrity hardening — canonical audit persistence
+
+Audit persistence is now routed through a single repository boundary, `src/db/audit-repository.js`. The provider callback transaction constructs the canonical audit contract and persists it through that repository rather than issuing a second, callback-specific SQL implementation.
+
+The lifecycle therefore remains:
+
+`Verify → Parse → Normalize → Resolve → Mutate → Canonical Audit Repository → Commit`
+
+This reduces the risk of divergent audit persistence semantics across message lifecycle paths. It remains application-level evidence; hosted CI, PostgreSQL execution, and external WhatsApp verification are still required before merge readiness is declared.
