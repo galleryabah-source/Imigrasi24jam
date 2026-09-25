@@ -55,3 +55,27 @@ Setelah admission, pemrosesan harus mempertahankan satu identitas pesan dan conv
 ## Urutan berikutnya
 
 Process 02 dilanjutkan dengan **transactional audit persistence dan provider delivery idempotency/reconciliation**. Keduanya harus diselesaikan sebagai bagian dari rantai yang sama, bukan sebagai modul terpisah. Saat ini database reference schema belum memiliki `correlation_id` pada `audit_events`, sehingga persistence belum boleh dinyatakan compatible hanya berdasarkan kontrak aplikasi.
+
+
+## Unified lifecycle integrity gate
+
+Process 02 now treats the message lifecycle as one identity chain, not independent module contracts:
+
+`provider message → durable inbox → conversation → outbox → delivery idempotency → audit correlation`
+
+The application-level integrity contract is implemented in `src/core/lifecycle-integrity.js` and regression-tested in `tests/lifecycle-integrity.test.js`.
+
+### Contract enforced
+
+- inbound identity must match provider + provider message ID;
+- outbound identity must retain the durable inbound ID as `reply_to_message_id`;
+- conversation identity must remain unchanged from inbound through delivery;
+- delivery idempotency identity is deterministically derived from provider + outbox + conversation + attempt;
+- audit events must use the same correlation ID;
+- provider reconciliation may match only by an explicit provider delivery identity or the deterministic idempotency identity.
+
+This is an application-level gate only. It does **not** claim external WhatsApp exactly-once delivery or production reconciliation until a real provider adapter/webhook is verified.
+
+### Current boundary
+
+The reference schema already contains `audit_events.correlation_id`, but the production migration remains intentionally uncreated/unapplied. No production schema, migration, or deployment is part of this gate.
