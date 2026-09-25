@@ -49,6 +49,6 @@ test('provider reconciliation matches only deterministic lifecycle identity', ()
     matched:false, by:null, status:'DELIVERED'
   });
   assert.deepEqual(reconcileProviderDelivery({ identity, providerMessageId:'WA-OUT-100', idempotencyKey:null, status:'DELIVERED' }), {
-    matched:true, by:'IDEMPOTENCY_KEY', status:'DELIVERED'
+    matched:true, by:'OUTBOUND_PROVIDER_MESSAGE_ID', status:'DELIVERED'
   });
 });
