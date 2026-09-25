@@ -27,3 +27,27 @@ test('out-of-scope closes conversation', () => {
 test('invalid transition event is rejected', () => {
   assert.throws(() => transitionConversation(createConversationState({ conversationId: 'C1' }), { type: 'UNKNOWN' }), /INVALID_CONVERSATION_EVENT/);
 });
+
+
+test('conversation rejects transitions that are invalid for the current state', () => {
+  const answering = transitionConversation(
+    transitionConversation(
+      createConversationState({ conversationId: 'C1' }),
+      { type: 'INTENT_RESOLVED', intent: 'PASSPORT' }
+    ),
+    { type: 'RETRIEVAL_RESOLVED' }
+  );
+  assert.equal(answering.state, 'ANSWERING');
+  assert.throws(
+    () => transitionConversation(answering, { type: 'INTENT_RESOLVED', intent: 'VISA' }),
+    /INVALID_CONVERSATION_TRANSITION/
+  );
+});
+
+test('closed conversation cannot be reopened by a later event', () => {
+  const closed = transitionConversation(createConversationState({ conversationId: 'C1' }), { type: 'OUT_OF_SCOPE' });
+  assert.throws(
+    () => transitionConversation(closed, { type: 'INTENT_RESOLVED', intent: 'PASSPORT' }),
+    /INVALID_CONVERSATION_TRANSITION/
+  );
+});
