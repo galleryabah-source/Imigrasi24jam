@@ -28,6 +28,7 @@ export async function runSyntheticMessageLifecycle({ transaction, providerStatus
       conversationId:conversation.id,
       outboxId:outbox.id,
       attempt:0,
+      outboundProviderMessageId:'WA-OUT-001',
       correlationId
     });
 
