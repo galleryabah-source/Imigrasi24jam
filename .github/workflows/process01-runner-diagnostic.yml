@@ -1,0 +1,30 @@
+name: Process 01 Runner Diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ['process-1-governance-core-2026-09-25']
+
+jobs:
+  runner-diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Runner identity
+        run: |
+          echo "runner=${RUNNER_NAME}"
+          echo "os=${RUNNER_OS}"
+          echo "arch=${RUNNER_ARCH}"
+          node --version || true
+          npm --version || true
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Execution proof
+        run: |
+          echo "PROCESS01_RUNNER_EXECUTION=PASS"
+          node --version
+          npm --version
