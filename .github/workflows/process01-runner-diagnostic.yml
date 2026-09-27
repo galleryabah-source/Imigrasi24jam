@@ -2,8 +2,9 @@ name: Process 01 Runner Diagnostic
 
 on:
   workflow_dispatch:
-  push:
-    branches: ['process-1-governance-core-2026-09-25']
+  pull_request:
+    branches:
+      - 'phase0-*'
 
 jobs:
   runner-diagnostic:
