@@ -14,10 +14,22 @@ function makeDb({ duplicate = false, auditFailure = false } = {}) {
             if (/INSERT INTO message_inbox/.test(sql)) {
               return duplicate
                 ? { rows: [] }
-                : { rows: [{ id:'00000000-0000-0000-0000-000000000001', conversation_id:'C1', provider_message_id:'WA-IN-1', provider:'wa', processing_status:'PROCESSING' }] };
+                : { rows: [{
+                  id:'00000000-0000-0000-0000-000000000001',
+                  conversation_id:'C1',
+                  provider_message_id:'WA-IN-1',
+                  provider:'wa',
+                  processing_status:'PROCESSING'
+                }] };
             }
             if (/INSERT INTO message_outbox/.test(sql)) {
-              return { rows: [{ id:'00000000-0000-0000-0000-000000000002', conversation_id:'C1', reply_to_message_id:'00000000-0000-0000-0000-000000000001', delivery_state:'PENDING' }] };
+              return { rows: [{
+                id:'00000000-0000-0000-0000-000000000002',
+                conversation_id:'C1',
+                reply_to_message_id:'00000000-0000-0000-0000-000000000001',
+                delivery_state:'PENDING',
+                attempt_count:0
+              }] };
             }
             if (/INSERT INTO audit_events/.test(sql)) {
               if (auditFailure) throw new Error('AUDIT_WRITE_FAILED');
@@ -59,12 +71,28 @@ test('canonical lifecycle commits inbox → conversation → outbox → audit in
   });
 
   assert.equal(result.status, 'COMMITTED');
-  assert.equal(result.inbound.conversation_id, 'C1');
+  assert.equal(result.identity.inbound_id, result.inbound.id);
+  assert.equal(result.identity.conversation_id, result.conversation.conversation_id);
+  assert.equal(result.identity.outbox_id, result.outbound.id);
+  assert.equal(result.identity.correlation_id, 'WA-IN-1');
   assert.equal(result.outbound.reply_to_message_id, result.inbound.id);
   assert.equal(result.audit.length, 4);
   assert.ok(calls.includes('BEGIN'));
   assert.ok(calls.includes('COMMIT'));
   assert.equal(calls.includes('ROLLBACK'), false);
+});
+
+test('conversation identity mismatch rolls back before outbox', async () => {
+  const { db, calls } = makeDb();
+  await assert.rejects(
+    () => runCanonicalInboundLifecycle(db, {
+      message:{ provider:'wa', providerMessageId:'WA-IN-MISMATCH', conversationId:'C1', sender:'U1', text:'halo' },
+      processConversation: async () => ({ status:'ANSWER', state:'ANSWERING', conversation_id:'C2', text:'Jawaban.' })
+    }),
+    /CONVERSATION_IDENTITY_MISMATCH/
+  );
+  assert.ok(calls.includes('ROLLBACK'));
+  assert.equal(calls.some((x) => typeof x === 'object' && /INSERT INTO message_outbox/.test(x.sql)), false);
 });
 
 test('duplicate durable inbox admission stops before conversation and outbox', async () => {
