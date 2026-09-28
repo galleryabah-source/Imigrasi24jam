@@ -43,13 +43,22 @@ export function createDeliveryReconciliationAudit({ identity, result, actorId = 
     actorId,
     eventType,
     subjectType: 'CONVERSATION',
-    subjectId: identity.conversation_id,
+    // audit_events.subject_id is UUID; the durable inbound row is the canonical
+    // UUID anchor for the conversation lifecycle until a dedicated conversation
+    // UUID is introduced. conversation_id remains explicit immutable detail.
+    subjectId: identity.inbound_id,
     correlationId: identity.correlation_id,
-    before: { delivery_state: result.previous_delivery_state ?? null },
+    before: {
+      delivery_state: result.previous_delivery_state ?? null
+    },
     after: {
+      inbound_id: identity.inbound_id,
+      conversation_id: identity.conversation_id,
+      outbox_id: identity.outbox_id,
       delivery_state: result.normalized.delivery_state,
       provider_status: result.normalized.provider_status,
-      outbound_provider_message_id: identity.outbound_provider_message_id ?? null
+      outbound_provider_message_id: identity.outbound_provider_message_id ?? null,
+      idempotency_key: identity.idempotency_key
     }
   });
 }
