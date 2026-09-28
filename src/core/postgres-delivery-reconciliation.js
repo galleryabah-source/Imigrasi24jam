@@ -4,7 +4,11 @@ export function createPostgresDeliveryIdentityResolver(db, { provider } = {}) {
   if (!db || typeof db.query !== 'function') throw new Error('DATABASE_QUERY_REQUIRED');
   if (!provider) throw new Error('PROVIDER_REQUIRED');
 
-  return async function resolveIdentity({ outbox_id = null, provider_message_id = null, idempotency_key = null } = {}) {
+  return async function resolveIdentity({
+    outbox_id = null,
+    provider_message_id = null,
+    idempotency_key = null
+  } = {}) {
     const result = await db.query(`
       SELECT
         o.id AS outbox_id,
@@ -28,7 +32,6 @@ export function createPostgresDeliveryIdentityResolver(db, { provider } = {}) {
     const row = result.rows[0];
     if (!row) return null;
 
-    const correlationId = row.inbound_provider_message_id;
     return createLifecycleIdentity({
       provider: row.provider,
       inboundProviderMessageId: row.inbound_provider_message_id,
@@ -37,7 +40,7 @@ export function createPostgresDeliveryIdentityResolver(db, { provider } = {}) {
       conversationId: row.conversation_id,
       outboxId: row.outbox_id,
       attempt: Number(row.attempt_count ?? 0),
-      correlationId
+      correlationId: row.inbound_provider_message_id
     });
   };
 }
