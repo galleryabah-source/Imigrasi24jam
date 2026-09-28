@@ -18,6 +18,34 @@ Komponen tidak boleh memiliki sumber kebenaran idempotensi yang saling bertentan
 6. Jika durable write gagal, provider retry tetap boleh mencoba lagi.
 7. Duplicate durable tidak diproses ulang dan tidak membuat outbox baru.
 
+## Canonical identity contract
+
+Imigrasi24jam menggunakan satu identity graph untuk seluruh lifecycle:
+
+`inbound_id → conversation_id → outbox_id → outbound provider delivery identity → audit correlation`
+
+Dengan aturan:
+
+- **`inbound_id`** adalah UUID durable dari `message_inbox` dan anchor internal utama.
+- **`provider_message_id`** hanya mengidentifikasi pesan inbound untuk admission; tidak boleh dipakai sebagai bukti delivery outbound.
+- **`conversation_id`** tetap menjadi identitas percakapan lintas Inbox/Conversation/Outbox pada schema saat ini.
+- **`outbox_id`** adalah UUID durable outbound dan selalu mereferensikan `inbound_id` melalui `reply_to_message_id`.
+- **`outbound_provider_message_id`** adalah identity provider untuk delivery outbound; nilainya berbeda secara semantik dari inbound provider message ID dan baru tersedia setelah provider send.
+- **`idempotency_key`** delivery diturunkan deterministik dari `provider + outbox_id + conversation_id + attempt`.
+- **`correlation_id`** adalah identity trace lifecycle yang sama dari inbound sampai audit; callback tidak boleh membuat correlation baru untuk lifecycle yang sudah ada.
+- **`audit_events.subject_id`** memakai `inbound_id` sebagai UUID anchor; `conversation_id`, `outbox_id`, dan provider identities tetap disimpan sebagai immutable audit detail.
+- Lease/worker ownership tidak mengubah identity graph.
+
+Aturan integritas yang sekarang executable:
+
+1. Inbox admission menghasilkan durable `inbound_id`.
+2. Conversation wajib mengembalikan `conversation_id` yang sama dengan Inbox; mismatch ditolak.
+3. Outbox wajib memakai `inbound_id` sebagai `reply_to_message_id` dan conversation identity yang sama.
+4. Delivery resolver membangun identity dari durable Outbox + joined Inbox, termasuk durable attempt.
+5. Provider callback hanya boleh reconcile menggunakan outbound provider identity atau deterministic idempotency key.
+6. Audit memakai correlation yang sama dan UUID inbound anchor.
+7. Worker lama hanya menjadi compatibility adapter; tidak boleh memiliki SQL persistence sendiri.
+
 ## Integritas rantai
 
 Setelah admission, pemrosesan harus mempertahankan satu identitas pesan dan conversation yang sama sampai outbox dan delivery. Lease hanya mengatur ownership worker; lease tidak mengubah identitas pesan.
@@ -58,163 +86,26 @@ Setelah admission, pemrosesan harus mempertahankan satu identitas pesan dan conv
 
 ## Urutan berikutnya
 
-Process 02 dilanjutkan dengan **transactional audit persistence dan provider delivery idempotency/reconciliation**. Keduanya harus diselesaikan sebagai bagian dari rantai yang sama, bukan sebagai modul terpisah. Saat ini database reference schema belum memiliki `correlation_id` pada `audit_events`, sehingga persistence belum boleh dinyatakan compatible hanya berdasarkan kontrak aplikasi.
+Process 02 dilanjutkan dengan **canonical identity hardening dan migrasi worker lama ke seam canonical**. Tahap ini tidak membuat jalur Inbox kedua: `src/core/inbox-worker.js` sekarang hanya compatibility adapter ke `runCanonicalInboundLifecycle()`.
 
+### Identity graph executable
 
-## Unified lifecycle integrity gate
+`inbound_id → conversation_id → outbox_id → outbound_provider_message_id / idempotency_key → correlation_id`
 
-Process 02 now treats the message lifecycle as one identity chain, not independent module contracts:
+Implementasi berada pada `src/core/lifecycle-integrity.js` dan `src/core/canonical-message-lifecycle.js`. Delivery reconciliation merekonstruksi graph dari durable `message_outbox` + `message_inbox`, sehingga retry tidak kehilangan identitas.
 
-`provider message → durable inbox → conversation → outbox → delivery idempotency → audit correlation`
+### Audit subject anchor
 
-The application-level integrity contract is implemented in `src/core/lifecycle-integrity.js` and regression-tested in `tests/lifecycle-integrity.test.js`.
+Karena `audit_events.subject_id` bertipe UUID sementara `conversation_id` bertipe text, audit tidak lagi mencoba menulis conversation text ke `subject_id`. Semua lifecycle audit menggunakan `inbound_id` sebagai UUID anchor dan menyimpan `conversation_id`/ `outbox_id`/ provider identity di `after_json`.
 
-### Contract enforced
+### Worker migration
 
-- inbound identity must match provider + provider message ID;
-- outbound identity must retain the durable inbound ID as `reply_to_message_id`;
-- conversation identity must remain unchanged from inbound through delivery;
-- delivery idempotency identity is deterministically derived from provider + outbox + conversation + attempt;
-- audit events must use the same correlation ID;
-- provider reconciliation may match only by an explicit provider delivery identity or the deterministic idempotency identity.
+`claimAndProcessInbound()` tetap tersedia untuk compatibility, tetapi seluruh persistence telah dihapus dari worker. Ia hanya memetakan callback legacy ke bentuk `processConversation` lalu memanggil canonical lifecycle. Dengan demikian tidak ada jalur kedua untuk Inbox atau Outbox.
 
-This is an application-level gate only. It does **not** claim external WhatsApp exactly-once delivery or production reconciliation until a real provider adapter/webhook is verified.
+## Remaining evidence gates
 
-### Full synthetic lifecycle integrity harness
-
-A deterministic synthetic harness now exercises the complete application identity chain in one transaction-shaped execution:
-
-`inbound → conversation → outbox → reconciliation → audit → integrity assertion`
-
-It verifies one correlation identity and deterministic delivery idempotency identity across the chain, verifies rollback on a synthetic audit failure, and verifies unmatched provider callbacks do not reconcile. This is a deterministic application test harness; it is not evidence of real WhatsApp delivery or hosted PostgreSQL execution.
-
-### Canonical provider delivery seam
-
-The outbox worker now depends on one generic `provider.send()` seam, implemented for WhatsApp by `src/integrations/whatsapp/delivery-adapter.js`. The adapter is the only bridge to the provider contract's `sendText()` / `sendAttachment()` methods and preserves the same deterministic idempotency identity into provider delivery results.
-
-This prevents the outbox worker and WhatsApp provider contract from becoming competing delivery abstractions. Attachment delivery is intentionally limited to one attachment per outbound message until an explicit provider batch contract exists.
-
-### Current boundary
-
-The canonical delivery reconciliation contract now normalizes provider status into the application's delivery state and resolves delivery only through the same provider message ID or deterministic idempotency identity used by the outbound lifecycle. An unmatched provider callback remains `UNMATCHED` and is not allowed to mutate lifecycle state.
-
-The reference schema already contains `audit_events.correlation_id`, but the production migration remains intentionally uncreated/unapplied. No production schema, migration, or deployment is part of this gate.
-
-
-### Identity semantic correction
-
-The lifecycle identity contract explicitly distinguishes the inbound provider message identity from the outbound provider delivery identity. Inbound `provider_message_id` remains the admission identity; outbound reconciliation must match the provider delivery ID associated with the outbox record or the deterministic idempotency key. This prevents an inbound message ID from being incorrectly reused as evidence for an outbound delivery callback.
-
-
-### Canonical PostgreSQL reconciliation persistence
-
-The provider reconciliation seam is now wired to the canonical `message_outbox` record through `createPostgresDeliveryIdentityResolver` and `createPostgresDeliveryPersistence`. Identity resolution joins the outbound record to its durable inbound record; persistence delegates through the canonical outbox repository and refuses terminal-state mutation. This remains an application-level PostgreSQL contract until hosted integration evidence is available.
-
-
-### Atomic delivery reconciliation boundary
-
-Delivery callback reconciliation is now modeled as an atomic workflow: resolve the canonical lifecycle identity → reconcile the delivery state → write the corresponding delivery audit event within the same database transaction. An unmatched callback exits without mutation or audit. The audit event carries the same conversation subject and lifecycle correlation identity, while outbound provider identity remains distinct from inbound provider identity.
-
-
-### Canonical provider callback composition
-
-The provider callback path is now composed as one application workflow: provider status parsing → durable identity resolution → canonical `message_outbox` reconciliation → delivery audit, all inside one database transaction. The callback entry point does not own a parallel delivery state. Unknown callbacks terminate as `UNMATCHED` before mutation or audit. This is application-level wiring; real provider webhook and hosted PostgreSQL evidence remain pending.
-
-
-### Canonical verified WhatsApp webhook entry
-
-The inbound delivery-status callback now has a single verified entry point: webhook verification → provider status parsing → durable lifecycle identity resolution → canonical outbox mutation → audit, within the existing transaction boundary. Verification failure terminates before parsing or database work. This keeps provider security, delivery state, identity, and audit inside the same application lifecycle rather than allowing a separate callback subsystem.
-
-
-## Latest integrated hardening — canonical provider callback normalization
-
-Process 02 callback handling is now kept on the same lifecycle contract rather than maintaining a second delivery-state interpretation:
-
-- provider callback status is normalized through `normalizeProviderDeliveryStatus()`;
-- `ACCEPTED` remains `PROCESSING`;
-- `SENT`, `DELIVERED`, and `READ` converge to `SENT`;
-- `FAILED` converges to `FAILED`;
-- unknown provider status is rejected before canonical outbox mutation or audit;
-- callback tests cover matched, unmatched, accepted, failed, and invalid-status paths;
-- audit classification distinguishes a true `DELIVERY_SENT` terminal transition from a non-terminal `DELIVERY_STATUS_RECONCILED` event.
-
-This keeps **Verify → Parse → Normalize → Resolve → Mutate → Audit** as one application flow. No production schema, migration, or deployment is introduced by this hardening.
-
-### Remaining Process 02 evidence gates
-
-1. Execute the complete unit/static suite in a healthy runner.
-2. Execute PostgreSQL integration against the reference/test schema.
-3. Add/verify composed WhatsApp webhook E2E coverage, including duplicate/terminal callback behavior and transaction rollback.
+1. Execute complete static/unit suite in a healthy runner.
+2. Execute PostgreSQL integration against reference/test schema.
+3. Verify composed WhatsApp webhook E2E, including duplicate/terminal callback behavior and rollback.
 4. Obtain hosted CI evidence.
-5. Only after the evidence gates pass, evaluate the separate production migration gate for `correlation_id` and dedicated delivery identity fields.
-
-
-
-### Latest integrity hardening — terminal callback idempotency
-
-Terminal provider callbacks are now explicitly idempotent at the canonical outbox boundary:
-
-- a callback matching an already SENT or FAILED record is recognized as an existing terminal delivery;
-- no second state mutation is performed;
-- no duplicate delivery audit event is emitted;
-- the transaction still returns the canonical lifecycle as RECONCILED;
-- lifecycle audit-event validation now includes non-terminal DELIVERY_STATUS_RECONCILED.
-
-This closes an important replay surface in the single lifecycle chain: provider retry → resolve same outbox identity → terminal no-op → no duplicate mutation/audit.
-
-No production schema, migration, or deployment is introduced.
-
-
-### Latest identity hardening — durable attempt continuity
-
-Provider delivery idempotency resolution now derives the lifecycle attempt from the durable `message_outbox.attempt_count`, rather than assuming attempt `0`. This keeps callback reconciliation aligned with the exact outbound attempt that the worker actually claimed and sent, including retry/recovery paths.
-
-The invariant is now:
-
-`durable outbox attempt → deterministic idempotency key → provider callback → canonical outbox reconciliation`
-
-No production schema, migration, or deployment is introduced.
-
-
-## Latest hardening — integrated static and composed webhook gate
-
-The canonical lifecycle is now treated as one executable chain rather than a collection of isolated modules.
-
-Static coverage has been expanded so `npm run check` includes the complete messaging/delivery path:
-`lifecycle integrity → delivery normalization → PostgreSQL identity resolution → transactional reconciliation → provider callback → WhatsApp webhook → delivery adapter`.
-
-A composed webhook regression suite also covers the chain:
-`verify → parse → normalize → resolve → mutate → audit → commit`, including canonical provider statuses, terminal callback idempotency, invalid-status rejection, lifecycle correlation/idempotency continuity, and rollback when audit persistence fails.
-
-This remains test/application-level evidence only. It does not establish hosted CI PASS, production schema readiness, production migration readiness, or real external WhatsApp provider E2E.
-
-
-### Latest integrity hardening — canonical audit persistence
-
-Audit persistence is now routed through a single repository boundary, `src/db/audit-repository.js`. The provider callback transaction constructs the canonical audit contract and persists it through that repository rather than issuing a second, callback-specific SQL implementation.
-
-The lifecycle therefore remains:
-
-`Verify → Parse → Normalize → Resolve → Mutate → Canonical Audit Repository → Commit`
-
-This reduces the risk of divergent audit persistence semantics across message lifecycle paths. It remains application-level evidence; hosted CI, PostgreSQL execution, and external WhatsApp verification are still required before merge readiness is declared.
-
-
-### Latest CI infrastructure hardening
-
-The three repository workflows used for the integrated evidence chain are now pinned to `ubuntu-24.04` rather than `ubuntu-latest`. The change is intentionally limited to runner determinism; application behavior, database schema, migrations, and production deployment boundaries are unchanged.
-
-Previous hosted runs terminated with job-level failure and zero executed steps. Because no step/log evidence was available, those failures were not interpreted as application test failures. The runner pin is the next evidence-gathering action before any application change is inferred.
-
-
-## P2 canonical lifecycle seam
-
-The canonical inbound transaction boundary is now `src/core/canonical-message-lifecycle.js`.
-
-Its required order is: durable inbox admission -> conversation processing -> canonical outbox enqueue -> audit persistence -> inbox processed.
-
-The durable inbox uniqueness constraint `(provider, provider_message_id)` remains the sole duplicate admission authority. The replay store remains defense-in-depth and is not allowed to consume admission before durable persistence succeeds.
-
-Conversation processing is supplied as a pure orchestration dependency; the canonical lifecycle owns the transaction and the durable inbox/outbox/audit boundaries. Delivery remains outside this transaction and is owned by the canonical outbox worker and provider delivery adapter.
-
-Legacy direct SQL in `src/core/inbox-worker.js` remains under migration until all callers are moved to the canonical seam. It must not become a second production admission path.
+5. Only after evidence gates pass, evaluate separate production migration needs for any future dedicated conversation UUID or delivery identity fields.
