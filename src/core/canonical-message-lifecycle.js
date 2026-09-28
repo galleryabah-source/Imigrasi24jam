@@ -1,32 +1,50 @@
 import { createInboxOutboxRepository } from './inbox-outbox-repository.js';
 import { createAuditEvent, AUDIT_EVENTS } from './audit-contract.js';
 import { insertAuditEvent } from '../db/audit-repository.js';
+import { createLifecycleIdentity } from './lifecycle-integrity.js';
 
 function lifecycleAuditEvents({ inbound, conversation, outbound, correlationId, actorId = null }) {
+  const subjectId = inbound.id;
+
   const events = [
     createAuditEvent({
       actorId,
       eventType: AUDIT_EVENTS.MESSAGE_RECEIVED,
       subjectType: 'CONVERSATION',
-      subjectId: inbound.id,
+      subjectId,
       correlationId,
-      after: { inbound_id: inbound.id, provider: inbound.provider, provider_message_id: inbound.provider_message_id }
+      after: {
+        inbound_id: inbound.id,
+        conversation_id: inbound.conversation_id,
+        provider: inbound.provider,
+        provider_message_id: inbound.provider_message_id
+      }
     }),
     createAuditEvent({
       actorId,
       eventType: AUDIT_EVENTS.CONVERSATION_TRANSITIONED,
       subjectType: 'CONVERSATION',
-      subjectId: inbound.id,
+      subjectId,
       correlationId,
-      after: { state: conversation.state, intent: conversation.intent ?? null }
+      after: {
+        inbound_id: inbound.id,
+        conversation_id: conversation.conversation_id,
+        state: conversation.state,
+        intent: conversation.intent ?? null
+      }
     }),
     createAuditEvent({
       actorId,
       eventType: AUDIT_EVENTS.OUTBOX_ENQUEUED,
       subjectType: 'CONVERSATION',
-      subjectId: inbound.id,
+      subjectId,
       correlationId,
-      after: { outbox_id: outbound.id, reply_to_message_id: outbound.reply_to_message_id }
+      after: {
+        inbound_id: inbound.id,
+        conversation_id: outbound.conversation_id,
+        outbox_id: outbound.id,
+        reply_to_message_id: outbound.reply_to_message_id
+      }
     })
   ];
 
@@ -35,9 +53,13 @@ function lifecycleAuditEvents({ inbound, conversation, outbound, correlationId, 
       actorId,
       eventType: AUDIT_EVENTS.ANSWER_SERVED,
       subjectType: 'CONVERSATION',
-      subjectId: inbound.id,
+      subjectId,
       correlationId,
-      after: { outbox_id: outbound.id }
+      after: {
+        inbound_id: inbound.id,
+        conversation_id: conversation.conversation_id,
+        outbox_id: outbound.id
+      }
     }));
   }
 
@@ -48,8 +70,9 @@ function lifecycleAuditEvents({ inbound, conversation, outbound, correlationId, 
  * Canonical inbound lifecycle:
  * durable admission → conversation processing → outbox enqueue → audit.
  *
- * Delivery is intentionally outside this transaction and remains owned by
- * the canonical outbox worker/provider adapter seam.
+ * Identity is established from durable IDs inside this transaction. Delivery
+ * remains outside this transaction and extends the same identity with the
+ * outbound provider delivery ID/idempotency key.
  */
 export async function runCanonicalInboundLifecycle(db, {
   message,
@@ -73,14 +96,29 @@ export async function runCanonicalInboundLifecycle(db, {
     });
 
     if (!admission.inserted) {
-      return Object.freeze({ status: 'DUPLICATE', inbound: null, conversation: null, outbound: null, audit: [] });
+      return Object.freeze({
+        status: 'DUPLICATE',
+        inbound: null,
+        conversation: null,
+        outbound: null,
+        identity: null,
+        audit: []
+      });
     }
 
     const inbound = admission.row;
     const conversation = await processConversation(inbound, { tx, correlationId });
-    if (!conversation || !conversation.conversation_id) throw new Error('CONVERSATION_ID_REQUIRED');
 
-    const outboundPayload = conversation.outboundPayload ?? { text: conversation.text ?? conversation.response ?? '' };
+    if (!conversation || !conversation.conversation_id) {
+      throw new Error('CONVERSATION_ID_REQUIRED');
+    }
+    if (conversation.conversation_id !== inbound.conversation_id) {
+      throw new Error('CONVERSATION_IDENTITY_MISMATCH');
+    }
+
+    const outboundPayload = conversation.outboundPayload ?? {
+      text: conversation.text ?? conversation.response ?? ''
+    };
     if (!String(outboundPayload.text ?? '').trim()) {
       throw new Error('OUTBOUND_TEXT_REQUIRED');
     }
@@ -92,11 +130,22 @@ export async function runCanonicalInboundLifecycle(db, {
       payload: outboundPayload
     });
 
+    const canonicalCorrelationId = correlationId ?? inbound.provider_message_id;
+    const identity = createLifecycleIdentity({
+      provider,
+      inboundProviderMessageId: inbound.provider_message_id,
+      inboundId: inbound.id,
+      conversationId: inbound.conversation_id,
+      outboxId: outbound.id,
+      attempt: Number(outbound.attempt_count ?? 0),
+      correlationId: canonicalCorrelationId
+    });
+
     const audit = lifecycleAuditEvents({
       inbound,
       conversation,
       outbound,
-      correlationId: correlationId ?? inbound.provider_message_id,
+      correlationId: identity.correlation_id,
       actorId
     });
 
@@ -108,6 +157,13 @@ export async function runCanonicalInboundLifecycle(db, {
     const processed = await repository.markInboundProcessed(inbound.id);
     if (!processed) throw new Error('INBOX_PROCESSING_COMMIT_FAILED');
 
-    return Object.freeze({ status: 'COMMITTED', inbound, conversation, outbound, audit });
+    return Object.freeze({
+      status: 'COMMITTED',
+      inbound,
+      conversation,
+      outbound,
+      identity,
+      audit
+    });
   });
 }
