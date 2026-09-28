@@ -205,3 +205,16 @@ This reduces the risk of divergent audit persistence semantics across message li
 The three repository workflows used for the integrated evidence chain are now pinned to `ubuntu-24.04` rather than `ubuntu-latest`. The change is intentionally limited to runner determinism; application behavior, database schema, migrations, and production deployment boundaries are unchanged.
 
 Previous hosted runs terminated with job-level failure and zero executed steps. Because no step/log evidence was available, those failures were not interpreted as application test failures. The runner pin is the next evidence-gathering action before any application change is inferred.
+
+
+## P2 canonical lifecycle seam
+
+The canonical inbound transaction boundary is now `src/core/canonical-message-lifecycle.js`.
+
+Its required order is: durable inbox admission -> conversation processing -> canonical outbox enqueue -> audit persistence -> inbox processed.
+
+The durable inbox uniqueness constraint `(provider, provider_message_id)` remains the sole duplicate admission authority. The replay store remains defense-in-depth and is not allowed to consume admission before durable persistence succeeds.
+
+Conversation processing is supplied as a pure orchestration dependency; the canonical lifecycle owns the transaction and the durable inbox/outbox/audit boundaries. Delivery remains outside this transaction and is owned by the canonical outbox worker and provider delivery adapter.
+
+Legacy direct SQL in `src/core/inbox-worker.js` remains under migration until all callers are moved to the canonical seam. It must not become a second production admission path.
