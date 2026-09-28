@@ -1,5 +1,6 @@
 import { createInboxOutboxRepository } from './inbox-outbox-repository.js';
 import { createAuditEvent, AUDIT_EVENTS } from './audit-contract.js';
+import { insertAuditEvent } from '../db/audit-repository.js';
 
 function lifecycleAuditEvents({ inbound, conversation, outbound, correlationId, actorId = null }) {
   const events = [
@@ -7,7 +8,7 @@ function lifecycleAuditEvents({ inbound, conversation, outbound, correlationId, 
       actorId,
       eventType: AUDIT_EVENTS.MESSAGE_RECEIVED,
       subjectType: 'CONVERSATION',
-      subjectId: conversation.conversation_id,
+      subjectId: inbound.id,
       correlationId,
       after: { inbound_id: inbound.id, provider: inbound.provider, provider_message_id: inbound.provider_message_id }
     }),
@@ -15,7 +16,7 @@ function lifecycleAuditEvents({ inbound, conversation, outbound, correlationId, 
       actorId,
       eventType: AUDIT_EVENTS.CONVERSATION_TRANSITIONED,
       subjectType: 'CONVERSATION',
-      subjectId: conversation.conversation_id,
+      subjectId: inbound.id,
       correlationId,
       after: { state: conversation.state, intent: conversation.intent ?? null }
     }),
@@ -23,7 +24,7 @@ function lifecycleAuditEvents({ inbound, conversation, outbound, correlationId, 
       actorId,
       eventType: AUDIT_EVENTS.OUTBOX_ENQUEUED,
       subjectType: 'CONVERSATION',
-      subjectId: conversation.conversation_id,
+      subjectId: inbound.id,
       correlationId,
       after: { outbox_id: outbound.id, reply_to_message_id: outbound.reply_to_message_id }
     })
@@ -34,7 +35,7 @@ function lifecycleAuditEvents({ inbound, conversation, outbound, correlationId, 
       actorId,
       eventType: AUDIT_EVENTS.ANSWER_SERVED,
       subjectType: 'CONVERSATION',
-      subjectId: conversation.conversation_id,
+      subjectId: inbound.id,
       correlationId,
       after: { outbox_id: outbound.id }
     }));
@@ -100,25 +101,8 @@ export async function runCanonicalInboundLifecycle(db, {
     });
 
     for (const event of audit) {
-      const result = await tx.query(
-        `INSERT INTO audit_events
-          (id, actor_id, event_type, subject_type, subject_id, before_json, after_json, reason, correlation_id, created_at)
-         VALUES
-          (gen_random_uuid(), $1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9)
-         RETURNING id, created_at`,
-        [
-          event.actor_id,
-          event.event_type,
-          event.subject_type,
-          event.subject_id,
-          JSON.stringify(event.before_json ?? null),
-          JSON.stringify(event.after_json ?? null),
-          event.reason,
-          event.correlation_id,
-          event.created_at
-        ]
-      );
-      if (!result.rows[0]) throw new Error('AUDIT_WRITE_FAILED');
+      const persisted = await insertAuditEvent(tx, event);
+      if (!persisted) throw new Error('AUDIT_WRITE_FAILED');
     }
 
     const processed = await repository.markInboundProcessed(inbound.id);
