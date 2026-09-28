@@ -4,8 +4,8 @@ export function createInboxOutboxRepository(db) {
   return Object.freeze({
     async insertIfNew({ provider, providerMessageId, conversationId, sender, payload }) {
       const result = await db.query(`
-        INSERT INTO message_inbox (provider, provider_message_id, conversation_id, sender, payload_json)
-        VALUES ($1,$2,$3,$4,$5)
+        INSERT INTO message_inbox (provider, provider_message_id, conversation_id, sender, payload_json, processing_status)
+        VALUES ($1,$2,$3,$4,$5,'PROCESSING')
         ON CONFLICT (provider, provider_message_id) DO NOTHING
         RETURNING id, processing_status
       `, [provider, providerMessageId, conversationId, sender, payload ?? {}]);
@@ -24,7 +24,8 @@ export function createInboxOutboxRepository(db) {
     },
 
     async markInboundProcessed(id) {
-      await db.query(`UPDATE message_inbox SET processing_status='PROCESSED', processed_at=now() WHERE id=$1 AND processing_status='PROCESSING'`, [id]);
+      const result = await db.query(`UPDATE message_inbox SET processing_status='PROCESSED', processed_at=now() WHERE id=$1 AND processing_status='PROCESSING' RETURNING id, processing_status`, [id]);
+      return result.rows[0] ?? null;
     }
   });
 }
