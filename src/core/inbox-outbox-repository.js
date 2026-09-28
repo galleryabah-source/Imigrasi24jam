@@ -2,15 +2,17 @@ export function createInboxOutboxRepository(db) {
   if (!db || typeof db.query !== 'function') throw new Error('DATABASE_QUERY_REQUIRED');
 
   return Object.freeze({
-    async claimInbound({ provider, providerMessageId, conversationId, sender, payload }) {
+    async insertIfNew({ provider, providerMessageId, conversationId, sender, payload }) {
       const result = await db.query(`
         INSERT INTO message_inbox (provider, provider_message_id, conversation_id, sender, payload_json)
         VALUES ($1,$2,$3,$4,$5)
         ON CONFLICT (provider, provider_message_id) DO NOTHING
         RETURNING id, processing_status
       `, [provider, providerMessageId, conversationId, sender, payload ?? {}]);
-      return result.rows[0] ?? null;
+      return Object.freeze({ inserted: result.rows.length === 1, row: result.rows[0] ?? null });
     },
+
+    async claimInbound(message) { return (await this.insertIfNew(message)).row; },
 
     async enqueueOutbound({ conversationId, replyToMessageId, provider, payload }) {
       const result = await db.query(`
