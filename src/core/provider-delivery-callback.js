@@ -25,7 +25,7 @@ export async function reconcileProviderCallbackTransaction(db, { provider, parse
         deliveryState: normalized.delivery_state
       });
       if (!result) return { matched:false };
-      return { matched:true, normalized, previous_delivery_state: result.previous_delivery_state ?? null, outbound_provider_message_id:result.provider_message_id };
+      return { matched:true, no_op: result.no_op === true, normalized, previous_delivery_state: result.previous_delivery_state ?? null, outbound_provider_message_id:result.provider_message_id };
     },
     writeAudit: async (tx, data) => {
       const event = createDeliveryReconciliationAudit({ identity:data.identity, result:data.result, actorId });
