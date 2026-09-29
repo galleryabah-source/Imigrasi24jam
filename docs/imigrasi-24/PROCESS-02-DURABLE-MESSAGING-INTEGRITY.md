@@ -252,3 +252,17 @@ Delivery reconciliation audit now uses the durable `inbound_id` UUID as `audit_e
 3. Verify composed WhatsApp webhook E2E, including duplicate/terminal callback behavior and rollback.
 4. Obtain hosted CI evidence.
 5. Only after those evidence gates pass, evaluate any future production migration for a dedicated conversation UUID or additional delivery identity fields.
+
+
+### P2 gap closure — admission and correlation ownership
+
+The WhatsApp inbox gateway is validation-only: it normalizes the provider request and validates replay timestamp freshness, but it does not insert into `message_inbox` and does not consume replay state. Durable Inbox admission is owned exclusively by `runCanonicalInboundLifecycle()`, which performs `insertIfNew()` inside the canonical transaction.
+
+Lifecycle correlation is deterministic and reconstructable from `provider + inbound provider message ID`. The canonical inbound lifecycle derives it after durable admission and passes that value to conversation processing, while PostgreSQL delivery reconciliation derives the same value from the durable inbound row. A caller-supplied correlation value can no longer create a second identity.
+
+Required regression invariants:
+- gateway performs no durable Inbox admission;
+- canonical lifecycle is the only Inbox admission owner;
+- conversation correlation equals canonical correlation;
+- delivery correlation equals canonical correlation;
+- audit correlation equals canonical correlation.
