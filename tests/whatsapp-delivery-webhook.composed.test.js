@@ -73,6 +73,7 @@ function makeComposedDb({ terminal = false, auditFailure = false } = {}) {
 function makeProvider(status) {
   return {
     verifyWebhook: async () => ({ valid: true }),
+    parseInbound: async () => null,
     parseDeliveryStatus: async () => ({
       status,
       provider_message_id: 'WA-OUT-1',
@@ -102,7 +103,7 @@ test('composed WhatsApp webhook reconciles every canonical provider status throu
 
     assert.equal(result.status, 'RECONCILED', status);
     assert.equal(result.reconciliation.result.normalized.delivery_state, expectation.state, status);
-    assert.equal(result.reconciliation.identity.correlation_id, 'WA-IN-1', status);
+    assert.equal(result.reconciliation.identity.correlation_id, 'wa:WA-IN-1', status);
     assert.equal(result.reconciliation.identity.idempotency_key, 'wa:O1:C1:3', status);
     assert.equal(result.reconciliation.audit.length, 1, status);
     assert.ok(calls.includes('BEGIN'), status);
