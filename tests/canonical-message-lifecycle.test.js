@@ -16,7 +16,7 @@ function makeDb({ duplicate = false, auditFailure = false } = {}) {
                 ? { rows: [] }
                 : { rows: [{
                   id:'00000000-0000-0000-0000-000000000001',
-                  conversation_id:'C1',
+                  conversation_id:params[2],
                   provider_message_id:'WA-IN-1',
                   provider:'wa',
                   processing_status:'PROCESSING'
@@ -25,7 +25,7 @@ function makeDb({ duplicate = false, auditFailure = false } = {}) {
             if (/INSERT INTO message_outbox/.test(sql)) {
               return { rows: [{
                 id:'00000000-0000-0000-0000-000000000002',
-                conversation_id:'C1',
+                conversation_id:params[1],
                 reply_to_message_id:'00000000-0000-0000-0000-000000000001',
                 delivery_state:'PENDING',
                 attempt_count:0
