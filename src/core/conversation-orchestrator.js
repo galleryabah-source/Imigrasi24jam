@@ -9,6 +9,8 @@ const ALLOWED_EVENTS = Object.freeze({
   CLOSED: Object.freeze([])
 });
 
+const ALL_EVENTS = new Set(Object.values(ALLOWED_EVENTS).flat());
+
 export function createConversationState({ conversationId, userId = null }) {
   if (!conversationId) throw new Error('CONVERSATION_ID_REQUIRED');
   return Object.freeze({ conversation_id: conversationId, user_id: userId, state: 'NEW', scope: null, intent: null, sub_intent: null, pending_question: null, turn_count: 0 });
@@ -17,6 +19,7 @@ export function createConversationState({ conversationId, userId = null }) {
 export function transitionConversation(state, event) {
   if (!state || !STATES.includes(state.state)) throw new Error('INVALID_CONVERSATION_STATE');
   const type = event?.type;
+  if (!ALL_EVENTS.has(type)) throw new Error('INVALID_CONVERSATION_EVENT');
   if (!ALLOWED_EVENTS[state.state].includes(type)) throw new Error('INVALID_CONVERSATION_TRANSITION');
 
   const next = { ...state, turn_count: state.turn_count + 1 };
