@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createInboxGateway } from '../src/integrations/whatsapp/inbox-gateway.js';
 
-function makeHarness({ inserted = true, replayAccepted = true } = {}) {
+function makeHarness() {
   const calls = [];
   return {
     calls,
@@ -12,40 +12,40 @@ function makeHarness({ inserted = true, replayAccepted = true } = {}) {
       senderId: 'U1',
       timestamp: input.timestamp
     }),
-    replayGuard: {
-      windowSeconds: 300,
-      async accept(args) {
-        calls.push(['replay', args]);
-        return replayAccepted;
-      }
-    },
-    inboxRepository: {
-      async insertIfNew(message) {
-        calls.push(['inbox', message]);
-        return { inserted };
-      }
-    }
+    replayGuard: { windowSeconds: 300 }
   };
 }
 
-test('durable inbox is authoritative and replay store is called only after durable admission', async () => {
+test('gateway validates and normalizes without owning durable inbox admission', async () => {
   const h = makeHarness();
   const gateway = createInboxGateway({ ...h, nowSeconds: () => 1_000_000 });
   const result = await gateway.accept({ provider: 'whatsapp', messageId: 'M1', timestamp: 1_000_000 });
   assert.equal(result.accepted, true);
-  assert.deepEqual(h.calls.map(([type]) => type), ['inbox', 'replay']);
+  assert.equal(result.duplicate, false);
+  assert.deepEqual(h.calls, []);
 });
 
-test('durable duplicate is rejected without consuming replay admission', async () => {
-  const h = makeHarness({ inserted: false });
-  const gateway = createInboxGateway({ ...h, nowSeconds: () => 1_000_000 });
+test('gateway does not consume replay state before canonical transaction', async () => {
+  const calls = [];
+  const gateway = createInboxGateway({
+    normalizer: input => ({
+      provider: input.provider,
+      providerMessageId: input.messageId,
+      senderId: 'U1',
+      timestamp: input.timestamp
+    }),
+    replayGuard: {
+      windowSeconds: 300,
+      async accept() { calls.push('replay'); return true; }
+    },
+    nowSeconds: () => 1_000_000
+  });
   const result = await gateway.accept({ provider: 'whatsapp', messageId: 'M1', timestamp: 1_000_000 });
-  assert.equal(result.accepted, false);
-  assert.equal(result.reason, 'DURABLE_DUPLICATE');
-  assert.deepEqual(h.calls.map(([type]) => type), ['inbox']);
+  assert.equal(result.accepted, true);
+  assert.deepEqual(calls, []);
 });
 
-test('expired inbound is rejected before durable admission', async () => {
+test('expired inbound is rejected before canonical admission', async () => {
   const h = makeHarness();
   const gateway = createInboxGateway({ ...h, nowSeconds: () => 2_000_000 });
   const result = await gateway.accept({ provider: 'whatsapp', messageId: 'M1', timestamp: 1_999_000 });
