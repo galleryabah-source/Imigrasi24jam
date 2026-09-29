@@ -1,4 +1,4 @@
-import { createLifecycleIdentity } from './lifecycle-integrity.js';
+import { createLifecycleIdentity, createCanonicalCorrelationId } from './lifecycle-integrity.js';
 
 export function createPostgresDeliveryIdentityResolver(db, { provider } = {}) {
   if (!db || typeof db.query !== 'function') throw new Error('DATABASE_QUERY_REQUIRED');
@@ -40,7 +40,10 @@ export function createPostgresDeliveryIdentityResolver(db, { provider } = {}) {
       conversationId: row.conversation_id,
       outboxId: row.outbox_id,
       attempt: Number(row.attempt_count ?? 0),
-      correlationId: row.inbound_provider_message_id
+      correlationId: createCanonicalCorrelationId({
+        provider: row.provider,
+        inboundProviderMessageId: row.inbound_provider_message_id
+      })
     });
   };
 }
