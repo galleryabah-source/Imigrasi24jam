@@ -1,7 +1,7 @@
 import { createInboxOutboxRepository } from './inbox-outbox-repository.js';
 import { createAuditEvent, AUDIT_EVENTS } from './audit-contract.js';
 import { insertAuditEvent } from '../db/audit-repository.js';
-import { createLifecycleIdentity } from './lifecycle-integrity.js';
+import { createLifecycleIdentity, createCanonicalCorrelationId } from './lifecycle-integrity.js';
 
 function lifecycleAuditEvents({ inbound, conversation, outbound, correlationId, actorId = null }) {
   const subjectId = inbound.id;
@@ -78,8 +78,7 @@ export async function runCanonicalInboundLifecycle(db, {
   message,
   processConversation,
   provider = message?.provider,
-  actorId = null,
-  correlationId = message?.correlationId ?? message?.providerMessageId ?? null
+  actorId = null
 } = {}) {
   if (!db || typeof db.transaction !== 'function') throw new Error('DATABASE_TRANSACTION_REQUIRED');
   if (!message) throw new Error('MESSAGE_REQUIRED');
@@ -107,7 +106,11 @@ export async function runCanonicalInboundLifecycle(db, {
     }
 
     const inbound = admission.row;
-    const conversation = await processConversation(inbound, { tx, correlationId });
+    const canonicalCorrelationId = createCanonicalCorrelationId({
+      provider: inbound.provider,
+      inboundProviderMessageId: inbound.provider_message_id
+    });
+    const conversation = await processConversation(inbound, { tx, correlationId: canonicalCorrelationId });
 
     if (!conversation || !conversation.conversation_id) {
       throw new Error('CONVERSATION_ID_REQUIRED');
@@ -130,7 +133,6 @@ export async function runCanonicalInboundLifecycle(db, {
       payload: outboundPayload
     });
 
-    const canonicalCorrelationId = correlationId ?? inbound.provider_message_id;
     const identity = createLifecycleIdentity({
       provider,
       inboundProviderMessageId: inbound.provider_message_id,
