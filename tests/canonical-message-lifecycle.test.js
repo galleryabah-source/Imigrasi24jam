@@ -61,11 +61,11 @@ test('canonical lifecycle commits inbox → conversation → outbox → audit in
       conversationId:'C1',
       sender:'U1',
       text:'syarat paspor',
-      correlationId:'WA-IN-1'
+      correlationId:'CALLER-SUPPLIED-INCORRECT'
     },
     processConversation: async (inbound, context) => {
       assert.equal(inbound.conversation_id, 'C1');
-      assert.equal(context.correlationId, 'WA-IN-1');
+      assert.equal(context.correlationId, 'wa:WA-IN-1');
       return { status:'ANSWER', state:'ANSWERING', conversation_id:'C1', intent:'SERVICE_REQUIREMENTS', text:'Syarat paspor.' };
     }
   });
@@ -74,7 +74,7 @@ test('canonical lifecycle commits inbox → conversation → outbox → audit in
   assert.equal(result.identity.inbound_id, result.inbound.id);
   assert.equal(result.identity.conversation_id, result.conversation.conversation_id);
   assert.equal(result.identity.outbox_id, result.outbound.id);
-  assert.equal(result.identity.correlation_id, 'WA-IN-1');
+  assert.equal(result.identity.correlation_id, 'wa:WA-IN-1');
   assert.equal(result.outbound.reply_to_message_id, result.inbound.id);
   assert.equal(result.audit.length, 4);
   assert.ok(calls.includes('BEGIN'));
@@ -133,4 +133,20 @@ test('conversation failure prevents outbox and audit', async () => {
   assert.ok(calls.includes('ROLLBACK'));
   assert.equal(calls.some(entry => typeof entry === 'object' && /message_outbox/.test(entry.sql)), false);
   assert.equal(calls.some(entry => typeof entry === 'object' && /audit_events/.test(entry.sql)), false);
+});
+
+
+test('caller-supplied correlation cannot diverge from canonical inbound identity', async () => {
+  const { db } = makeDb();
+  let observed;
+  const result = await runCanonicalInboundLifecycle(db, {
+    message:{ provider:'wa', providerMessageId:'WA-IN-CORR', conversationId:'C9', sender:'U1', text:'halo', correlationId:'WRONG' },
+    processConversation: async (inbound, context) => {
+      observed = context.correlationId;
+      return { status:'ANSWER', state:'ANSWERING', conversation_id:'C9', text:'Jawaban.' };
+    }
+  });
+  assert.equal(result.status, 'COMMITTED');
+  assert.equal(observed, 'wa:WA-IN-CORR');
+  assert.equal(result.identity.correlation_id, observed);
 });
