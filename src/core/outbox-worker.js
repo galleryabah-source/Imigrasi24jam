@@ -4,9 +4,9 @@ export function createDeliveryIdempotencyKey({ provider, outboundId, conversatio
   return `${provider}:${outboundId}:${conversationId}:${attempt}`;
 }
 
-export function normalizeProviderDeliveryResult(result) {
+export function normalizeProviderDeliveryResult(result, fallbackIdempotencyKey = null) {
   const providerMessageId = result?.provider_message_id ?? null;
-  const idempotencyKey = result?.idempotency_key ?? null;
+  const idempotencyKey = result?.idempotency_key ?? fallbackIdempotencyKey;
   if (!providerMessageId && !idempotencyKey) throw new Error('PROVIDER_DELIVERY_IDENTITY_REQUIRED');
   return Object.freeze({ provider_message_id: providerMessageId, idempotency_key: idempotencyKey });
 }
@@ -31,7 +31,7 @@ export function createOutboxWorker({ repository, provider }) {
       try {
         const idempotencyKey = createDeliveryIdempotencyKey({ provider: job.provider, outboundId: job.id, conversationId: job.conversation_id, attempt: job.attempt_count });
         const result = await provider.send({ ...job.payload_json, idempotency_key: idempotencyKey });
-        const delivery = normalizeProviderDeliveryResult(result);
+        const delivery = normalizeProviderDeliveryResult(result, idempotencyKey);
         const committed = await repository.markOutboundSent(job.id, delivery.provider_message_id, delivery.idempotency_key);
         if (committed === false) return Object.freeze({ status: 'LEASE_LOST', id: job.id });
         return Object.freeze({ status: 'SENT', id: job.id });
