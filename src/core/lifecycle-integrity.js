@@ -1,5 +1,10 @@
 import { createDeliveryIdempotencyKey } from './outbox-worker.js';
 
+export function createCanonicalCorrelationId({ provider, inboundProviderMessageId }) {
+  if (!provider || !inboundProviderMessageId) throw new Error('CORRELATION_IDENTITY_REQUIRED');
+  return `${provider}:${inboundProviderMessageId}`;
+}
+
 export const LIFECYCLE_EVENT_TYPES = Object.freeze([
   'MESSAGE_RECEIVED',
   'MESSAGE_DUPLICATE',
