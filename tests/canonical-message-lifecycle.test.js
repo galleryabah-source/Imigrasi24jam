@@ -17,7 +17,7 @@ function makeDb({ duplicate = false, auditFailure = false } = {}) {
                 : { rows: [{
                   id:'00000000-0000-0000-0000-000000000001',
                   conversation_id:params[2],
-                  provider_message_id:'WA-IN-1',
+                  provider_message_id:params[1],
                   provider:'wa',
                   processing_status:'PROCESSING'
                 }] };
