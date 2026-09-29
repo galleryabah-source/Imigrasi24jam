@@ -47,5 +47,5 @@ test('verified webhook enters the canonical reconciliation transaction', async (
   assert.equal(result.status,'RECONCILED');
   assert.equal(calls[0],'verify');
   assert.equal(calls.includes('parse'),true);
-  assert.equal(calls.filter((v)=>typeof v==='string' && v.startsWith('UPDATE message_outbox')).length,1);
+  assert.equal(calls.filter((v)=>typeof v==='string' && v.includes('UPDATE message_outbox')).length,1);
 });
