@@ -1,0 +1,49 @@
+name: Imigrasi24jam Core
+
+on:
+  push:
+    branches: [main, 'phase0-*']
+  pull_request:
+
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: imigrasi
+          POSTGRES_PASSWORD: imigrasi
+          POSTGRES_DB: imigrasi24jam_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U imigrasi -d imigrasi24jam_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install
+      - name: Syntax check
+        run: npm run check
+      - name: Regression tests
+        run: npm test
+      - name: Apply test migration
+        env:
+          DATABASE_URL: postgresql://imigrasi:imigrasi@localhost:5432/imigrasi24jam_test
+        run: npm run migrate:test
+      - name: Verify migrated schema
+        env:
+          DATABASE_URL: postgresql://imigrasi:imigrasi@localhost:5432/imigrasi24jam_test
+        run: node --test tests/migration-schema.test.js
+      - name: PostgreSQL integration tests
+        env:
+          DATABASE_URL: postgresql://imigrasi:imigrasi@localhost:5432/imigrasi24jam_test
+        run: npm run test:db
