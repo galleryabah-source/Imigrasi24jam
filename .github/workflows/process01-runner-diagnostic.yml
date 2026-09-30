@@ -5,10 +5,11 @@ on:
   pull_request:
     branches:
       - 'phase0-*'
+      - 'process-*'
 
 jobs:
   runner-diagnostic:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Runner identity

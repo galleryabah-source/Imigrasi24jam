@@ -13,14 +13,13 @@ concurrency:
 jobs:
   syntax-and-unit:
     name: P1 / Syntax + Unit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
       - run: npm install
       - name: Syntax check
         run: npm run check
@@ -30,7 +29,7 @@ jobs:
   postgres-integration:
     name: P1 / PostgreSQL Integration
     needs: syntax-and-unit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       postgres:
@@ -53,7 +52,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
       - run: npm install
       - name: Verify migration inventory
         run: npm run verify:migrations

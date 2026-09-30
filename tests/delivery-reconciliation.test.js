@@ -5,12 +5,13 @@ import { normalizeProviderDeliveryStatus, reconcileDeliveryStatus } from '../src
 const identity = {
   provider:'wa',
   provider_message_id:'P-100',
+  outbound_provider_message_id:'P-100',
   conversation_id:'C-100',
   outbox_id:'O-100',
   inbound_id:'I-100',
   attempt:0,
   idempotency_key:'wa:O-100:C-100:0',
-  correlation_id:'WA-100'
+  correlation_id:'wa:P-100'
 };
 
 test('provider delivery statuses normalize into canonical delivery states', () => {

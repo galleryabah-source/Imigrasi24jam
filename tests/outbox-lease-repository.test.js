@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createOutboxLeaseRepository } from '../src/core/outbox-lease-repository.js';
+import { CLAIM_PENDING_OUTBOX_SQL } from '../src/core/outbox-claim-sql.js';
 
 test('claim query uses SKIP LOCKED and worker lease', async () => {
   let sql = '';
@@ -8,6 +9,7 @@ test('claim query uses SKIP LOCKED and worker lease', async () => {
   const repo = createOutboxLeaseRepository(db, { workerId:'W1', leaseSeconds:60 });
   const job = await repo.claimPendingOutbound();
   assert.equal(job.id, 'O1');
+  assert.equal(sql.trim(), CLAIM_PENDING_OUTBOX_SQL.trim());
   assert.match(sql, /FOR UPDATE SKIP LOCKED/);
   assert.match(sql, /lease_expires_at/);
 });

@@ -16,6 +16,7 @@ test('postgres delivery identity resolver binds outbox to its inbound message', 
     provider_message_id:'WA-OUT-1'
   });
   assert.equal(identity.inbound_provider_message_id, 'WA-IN-1');
+  assert.equal(identity.correlation_id, 'wa:WA-IN-1');
   assert.equal(identity.outbound_provider_message_id, 'WA-OUT-1');
   assert.equal(identity.outbox_id, 'O1');
   assert.equal(identity.attempt, 3);

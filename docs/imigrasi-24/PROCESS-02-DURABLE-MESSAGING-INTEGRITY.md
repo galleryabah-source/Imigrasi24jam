@@ -205,3 +205,81 @@ This reduces the risk of divergent audit persistence semantics across message li
 The three repository workflows used for the integrated evidence chain are now pinned to `ubuntu-24.04` rather than `ubuntu-latest`. The change is intentionally limited to runner determinism; application behavior, database schema, migrations, and production deployment boundaries are unchanged.
 
 Previous hosted runs terminated with job-level failure and zero executed steps. Because no step/log evidence was available, those failures were not interpreted as application test failures. The runner pin is the next evidence-gathering action before any application change is inferred.
+
+## P2 canonical lifecycle seam
+
+The canonical inbound transaction boundary is now `src/core/canonical-message-lifecycle.js`.
+
+Its required order is: durable inbox admission -> conversation processing -> canonical outbox enqueue -> audit persistence -> inbox processed.
+
+The durable inbox uniqueness constraint `(provider, provider_message_id)` remains the sole duplicate admission authority. The replay store remains defense-in-depth and is not allowed to consume admission before durable persistence succeeds.
+
+Conversation processing is supplied as a pure orchestration dependency; the canonical lifecycle owns the transaction and the durable inbox/outbox/audit boundaries. Delivery remains outside this transaction and is owned by the canonical outbox worker and provider delivery adapter.
+
+## Canonical identity hardening
+
+Imigrasi24jam now uses one executable identity graph:
+
+`inbound_id → conversation_id → outbox_id → outbound_provider_message_id / idempotency_key → correlation_id`
+
+Rules:
+
+- `inbound_id` is the durable UUID anchor from `message_inbox`.
+- inbound `provider_message_id` is admission identity only; it is never treated as outbound delivery identity.
+- `conversation_id` must remain identical from Inbox through Conversation and Outbox.
+- `outbox_id` is the durable outbound identity and must reference `inbound_id` through `reply_to_message_id`.
+- `outbound_provider_message_id` is created by the provider delivery seam and remains distinct from the inbound provider ID.
+- delivery `idempotency_key` is deterministically derived from provider + outbox + conversation + durable attempt.
+- `correlation_id` remains stable across the lifecycle and audit.
+- `audit_events.subject_id` uses `inbound_id` as the UUID anchor because the current schema stores `conversation_id` as text; conversation/outbox/provider identities remain explicit audit detail.
+
+The executable contract is enforced by `src/core/lifecycle-integrity.js`, while `src/core/canonical-message-lifecycle.js` establishes the identity during the durable Inbox → Conversation → Outbox transaction.
+
+## Legacy worker migration
+
+`src/core/inbox-worker.js` is now compatibility-only. Its persistence SQL has been removed. It adapts legacy processing callbacks into `runCanonicalInboundLifecycle()` and therefore cannot create a competing Inbox or Outbox path.
+
+Regression tests explicitly assert that the legacy worker contains no direct Inbox/Outbox INSERT implementation and that duplicate admission stops before processing, Outbox, and audit.
+
+## Audit identity correction
+
+Delivery reconciliation audit now uses the durable `inbound_id` UUID as `audit_events.subject_id`. The text `conversation_id`, `outbox_id`, outbound provider identity, deterministic idempotency key, and correlation ID remain in the audit event detail. This removes the previous UUID/text semantic mismatch without introducing a production migration.
+
+## Remaining evidence gates
+
+1. Execute complete static/unit suite in a healthy runner.
+2. Execute PostgreSQL integration against the reference/test schema.
+3. Verify composed WhatsApp webhook E2E, including duplicate/terminal callback behavior and rollback.
+4. Obtain hosted CI evidence.
+5. Only after those evidence gates pass, evaluate any future production migration for a dedicated conversation UUID or additional delivery identity fields.
+
+
+### P2 gap closure — admission and correlation ownership
+
+The WhatsApp inbox gateway is validation-only: it normalizes the provider request and validates replay timestamp freshness, but it does not insert into `message_inbox` and does not consume replay state. Durable Inbox admission is owned exclusively by `runCanonicalInboundLifecycle()`, which performs `insertIfNew()` inside the canonical transaction.
+
+Lifecycle correlation is deterministic and reconstructable from `provider + inbound provider message ID`. The canonical inbound lifecycle derives it after durable admission and passes that value to conversation processing, while PostgreSQL delivery reconciliation derives the same value from the durable inbound row. A caller-supplied correlation value can no longer create a second identity.
+
+Required regression invariants:
+- gateway performs no durable Inbox admission;
+- canonical lifecycle is the only Inbox admission owner;
+- conversation correlation equals canonical correlation;
+- delivery correlation equals canonical correlation;
+- audit correlation equals canonical correlation.
+
+
+## Final residual-path audit
+
+The final production-source audit on the P2 branch checked the complete `src/` tree for competing Inbox, Conversation, Outbox, and lifecycle-audit seams.
+
+Evidence:
+- direct `message_inbox` persistence exists only in `src/core/inbox-outbox-repository.js`;
+- direct `message_outbox` persistence exists only in `src/core/inbox-outbox-repository.js`;
+- `src/core/inbox-worker.js` is compatibility-only and delegates to `runCanonicalInboundLifecycle()`;
+- `src/integrations/whatsapp/inbox-gateway.js` is validation-only and does not admit durable Inbox rows;
+- delivery reconciliation reads the durable Outbox/Inbox identity and remains outside the inbound transaction;
+- `insertAuditEvent()` is used by the canonical inbound lifecycle and the separate delivery-reconciliation transaction, with the latter extending the same lifecycle identity rather than creating a second inbound path;
+- the obsolete generic `runTransactionalMessageLifecycle()` helper was removed because it exposed a second possible Inbox → Conversation → Outbox → Audit transaction boundary despite having no production caller;
+- its obsolete tests were removed; canonical lifecycle coverage remains in `tests/canonical-message-lifecycle.test.js`.
+
+Conclusion: no competing production Inbox → Conversation → Outbox lifecycle caller or generic lifecycle seam remains in the P2 source tree. The remaining work is evidence/review gating, not architecture expansion.

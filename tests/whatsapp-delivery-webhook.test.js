@@ -7,6 +7,7 @@ test('webhook verification is the first gate before reconciliation', async () =>
   const db = { transaction: async () => { calls.push('transaction'); throw new Error('SHOULD_NOT_REACH_TRANSACTION'); } };
   const provider = {
     verifyWebhook: async () => { calls.push('verify'); return { valid:false }; },
+    parseInbound: async () => null,
     parseDeliveryStatus: async () => { calls.push('parse'); return null; },
     sendText: async () => ({}),
     sendAttachment: async () => ({})
@@ -37,6 +38,7 @@ test('verified webhook enters the canonical reconciliation transaction', async (
   };
   const provider = {
     verifyWebhook: async () => { calls.push('verify'); return { valid:true }; },
+    parseInbound: async () => null,
     parseDeliveryStatus: async () => { calls.push('parse'); return { status:'DELIVERED', provider_message_id:'WA-OUT-1' }; },
     sendText: async () => ({ provider_message_id:'WA-OUT-1' }),
     sendAttachment: async () => ({ provider_message_id:'WA-OUT-1' })
@@ -45,5 +47,5 @@ test('verified webhook enters the canonical reconciliation transaction', async (
   assert.equal(result.status,'RECONCILED');
   assert.equal(calls[0],'verify');
   assert.equal(calls.includes('parse'),true);
-  assert.equal(calls.filter((v)=>typeof v==='string' && v.startsWith('UPDATE message_outbox')).length,1);
+  assert.equal(calls.filter((v)=>typeof v==='string' && v.includes('UPDATE message_outbox')).length,1);
 });
