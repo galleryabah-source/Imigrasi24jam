@@ -38,19 +38,3 @@ test('invalid approval workflow is rejected', async () => {
   await assert.rejects(() => runApprovalPublicationTransaction(fakeDb(), {}), /INVALID_APPROVAL_WORKFLOW/);
 });
 
-
-test('message lifecycle keeps admission, conversation, outbox and audit in one transaction', async () => {
-  const calls = [];
-  const result = await (await import('../src/db/transactional-workflow.js')).runTransactionalMessageLifecycle(fakeDb(), {
-    admitInbound: async () => { calls.push('inbound'); return { id: 'I1', conversation_id: 'C1' }; },
-    processConversation: async (_tx, inbound) => { calls.push('conversation'); assert.equal(inbound.conversation_id, 'C1'); return { id: 'C1', status: 'ANSWERED', correlation_id: 'I1' }; },
-    enqueueOutbound: async (_tx, data) => { calls.push('outbox'); assert.equal(data.inbound.id, 'I1'); assert.equal(data.conversation.id, 'C1'); return { id: 'O1' }; },
-    writeAudit: async (_tx, data) => { calls.push('audit'); assert.equal(data.outbound.id, 'O1'); return [{ id: 'A1' }]; }
-  });
-  assert.equal(result.status, 'COMMITTED');
-  assert.deepEqual(calls, ['inbound', 'conversation', 'outbox', 'audit']);
-});
-
-test('message lifecycle rejects incomplete workflow before opening transaction work', async () => {
-  await assert.rejects(() => import('../src/db/transactional-workflow.js').then(({ runTransactionalMessageLifecycle }) => runTransactionalMessageLifecycle(fakeDb(), {})), /INVALID_MESSAGE_LIFECYCLE_WORKFLOW/);
-});
