@@ -266,3 +266,20 @@ Required regression invariants:
 - conversation correlation equals canonical correlation;
 - delivery correlation equals canonical correlation;
 - audit correlation equals canonical correlation.
+
+
+## Final residual-path audit
+
+The final production-source audit on the P2 branch checked the complete `src/` tree for competing Inbox, Conversation, Outbox, and lifecycle-audit seams.
+
+Evidence:
+- direct `message_inbox` persistence exists only in `src/core/inbox-outbox-repository.js`;
+- direct `message_outbox` persistence exists only in `src/core/inbox-outbox-repository.js`;
+- `src/core/inbox-worker.js` is compatibility-only and delegates to `runCanonicalInboundLifecycle()`;
+- `src/integrations/whatsapp/inbox-gateway.js` is validation-only and does not admit durable Inbox rows;
+- delivery reconciliation reads the durable Outbox/Inbox identity and remains outside the inbound transaction;
+- `insertAuditEvent()` is used by the canonical inbound lifecycle and the separate delivery-reconciliation transaction, with the latter extending the same lifecycle identity rather than creating a second inbound path;
+- the obsolete generic `runTransactionalMessageLifecycle()` helper was removed because it exposed a second possible Inbox → Conversation → Outbox → Audit transaction boundary despite having no production caller;
+- its obsolete tests were removed; canonical lifecycle coverage remains in `tests/canonical-message-lifecycle.test.js`.
+
+Conclusion: no competing production Inbox → Conversation → Outbox lifecycle caller or generic lifecycle seam remains in the P2 source tree. The remaining work is evidence/review gating, not architecture expansion.
