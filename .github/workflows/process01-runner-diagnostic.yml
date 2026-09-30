@@ -6,6 +6,7 @@ on:
     branches:
       - 'phase0-*'
       - 'process-*'
+      - 'production-*'
 
 jobs:
   runner-diagnostic:
