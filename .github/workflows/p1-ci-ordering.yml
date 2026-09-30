@@ -3,7 +3,7 @@ name: Imigrasi24jam P1 CI Ordering
 on:
   pull_request:
   push:
-    branches: [main, 'phase0-*', 'process-*']
+    branches: [main, 'phase0-*', 'process-*', 'production-*']
   workflow_dispatch:
 
 concurrency:
