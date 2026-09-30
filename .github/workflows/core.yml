@@ -2,12 +2,12 @@ name: Imigrasi24jam Core
 
 on:
   push:
-    branches: [main, 'phase0-*']
+    branches: [main, 'phase0-*', 'process-*']
   pull_request:
 
 jobs:
   core:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     services:
       postgres:
         image: postgres:16

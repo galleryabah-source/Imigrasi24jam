@@ -20,3 +20,9 @@ test('delivery state transitions are bounded', () => {
   assert.equal(nextDeliveryState('RETRY','GIVE_UP'), 'FAILED');
   assert.throws(() => nextDeliveryState('SENT','SEND'), /INVALID_DELIVERY_TRANSITION/);
 });
+
+
+test('terminal delivery states cannot transition again', () => {
+  assert.throws(() => nextDeliveryState('SENT', 'SEND'), /INVALID_DELIVERY_TRANSITION/);
+  assert.throws(() => nextDeliveryState('FAILED', 'RETRY'), /INVALID_DELIVERY_TRANSITION/);
+});

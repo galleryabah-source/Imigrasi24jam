@@ -37,3 +37,4 @@ test('approval, publication and audit are atomic', async () => {
 test('invalid approval workflow is rejected', async () => {
   await assert.rejects(() => runApprovalPublicationTransaction(fakeDb(), {}), /INVALID_APPROVAL_WORKFLOW/);
 });
+

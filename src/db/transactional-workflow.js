@@ -27,3 +27,4 @@ export async function runApprovalPublicationTransaction(db, workflow) {
     return Object.freeze({ approval, publication, audit });
   });
 }
+

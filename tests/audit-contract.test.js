@@ -6,6 +6,15 @@ test('audit event requires consequential identifiers', () => {
   assert.throws(() => createAuditEvent({ eventType: AUDIT_EVENTS.DOCUMENT_UPLOADED, subjectType: 'DOCUMENT' }), /INVALID_AUDIT_EVENT/);
 });
 
+test('audit event rejects unknown event types', () => {
+  assert.throws(() => createAuditEvent({ eventType: 'UNKNOWN', subjectType: 'MESSAGE', subjectId: 'M1' }), /INVALID_AUDIT_EVENT_TYPE/);
+});
+
+test('audit event supports lifecycle correlation identity', () => {
+  const event = createAuditEvent({ eventType: AUDIT_EVENTS.MESSAGE_RECEIVED, subjectType: 'MESSAGE', subjectId: 'M1', correlationId: 'C1' });
+  assert.equal(event.correlation_id, 'C1');
+});
+
 test('audit event is immutable and preserves before/after values', () => {
   const event = createAuditEvent({
     actorId: 'U1', eventType: AUDIT_EVENTS.DOCUMENT_PUBLISHED, subjectType: 'DOCUMENT', subjectId: 'D1',
@@ -15,4 +24,12 @@ test('audit event is immutable and preserves before/after values', () => {
   assert.equal(event.before_json.status, 'APPROVED');
   assert.equal(event.after_json.status, 'PUBLISHED');
   assert.equal(Object.isFrozen(event), true);
+});
+
+
+test('audit event correlation identity is deterministic and stable', () => {
+  const first = createAuditEvent({ eventType: AUDIT_EVENTS.DELIVERY_SENT, subjectType: 'MESSAGE_OUTBOX', subjectId: 'O1', correlationId: 'WA-1' });
+  const second = createAuditEvent({ eventType: AUDIT_EVENTS.DELIVERY_SENT, subjectType: 'MESSAGE_OUTBOX', subjectId: 'O1', correlationId: 'WA-1' });
+  assert.equal(first.correlation_id, second.correlation_id);
+  assert.equal(first.subject_id, second.subject_id);
 });

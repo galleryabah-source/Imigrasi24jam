@@ -1,26 +1,63 @@
-export async function claimAndProcessInbound(db, { provider, providerMessageId, conversationId, sender, payload }, process) {
+import { runCanonicalInboundLifecycle } from './canonical-message-lifecycle.js';
+
+/**
+ * Compatibility entry point for legacy callers.
+ *
+ * This file is deliberately no longer a persistence implementation. It is an
+ * adapter into the canonical lifecycle so there is exactly one production
+ * Inbox → Conversation → Outbox → Audit path.
+ */
+export async function claimAndProcessInbound(
+  db,
+  { provider, providerMessageId, conversationId, sender, payload, correlationId = providerMessageId },
+  process
+) {
   if (!db || typeof db.transaction !== 'function') throw new Error('TRANSACTION_REQUIRED');
   if (typeof process !== 'function') throw new Error('PROCESSOR_REQUIRED');
 
-  return db.transaction(async (tx) => {
-    const inserted = await tx.query(`
-      INSERT INTO message_inbox (provider, provider_message_id, conversation_id, sender, payload_json, processing_status)
-      VALUES ($1,$2,$3,$4,$5,'PROCESSING')
-      ON CONFLICT (provider, provider_message_id) DO NOTHING
-      RETURNING id, conversation_id, provider_message_id
-    `, [provider, providerMessageId, conversationId, sender, payload ?? {}]);
+  const result = await runCanonicalInboundLifecycle(db, {
+    message: {
+      provider,
+      providerMessageId,
+      conversationId,
+      sender,
+      payload,
+      correlationId
+    },
+    processConversation: async (inbound, context) => {
+      const legacyResult = await process(inbound, context);
+      const outboundPayload = legacyResult?.outboundPayload ?? legacyResult ?? {};
+      const text = String(
+        outboundPayload.text ??
+        outboundPayload.response ??
+        ''
+      ).trim();
 
-    if (!inserted.rows.length) return Object.freeze({ status: 'DUPLICATE', created: false });
+      if (!text) throw new Error('OUTBOUND_TEXT_REQUIRED');
 
-    const inbound = inserted.rows[0];
-    const outboundPayload = await process(inbound);
-    const outbound = await tx.query(`
-      INSERT INTO message_outbox (conversation_id, reply_to_message_id, provider, payload_json)
-      VALUES ($1,$2,$3,$4)
-      RETURNING id, delivery_state
-    `, [conversationId, inbound.id, provider, outboundPayload ?? {}]);
+      return Object.freeze({
+        status: legacyResult?.status ?? 'ANSWER',
+        state: legacyResult?.state ?? 'ANSWERING',
+        conversation_id: inbound.conversation_id,
+        intent: legacyResult?.intent ?? null,
+        text,
+        outboundPayload: { ...outboundPayload, text }
+      });
+    }
+  });
 
-    await tx.query(`UPDATE message_inbox SET processing_status='PROCESSED', processed_at=now() WHERE id=$1`, [inbound.id]);
-    return Object.freeze({ status: 'PROCESSED', created: true, inbound_id: inbound.id, outbox_id: outbound.rows[0].id });
+  if (result.status === 'DUPLICATE') {
+    if (typeof process.onDuplicate === 'function') {
+      await process.onDuplicate({ provider, providerMessageId, conversationId, correlationId });
+    }
+    return Object.freeze({ status: 'DUPLICATE', created: false });
+  }
+
+  return Object.freeze({
+    status: 'PROCESSED',
+    created: true,
+    inbound_id: result.inbound.id,
+    outbox_id: result.outbound.id,
+    identity: result.identity
   });
 }

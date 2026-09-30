@@ -25,3 +25,13 @@ test('missing evidence cannot become public answer', async () => {
   const result = await orchestrateMessage({ message:{ conversationId:'C4', from:'U4', text:'syarat paspor' }, knowledge, evidenceByKnowledgeId:{}, now:'2026-08-29T00:00:00Z' });
   assert.notEqual(result.status, 'ANSWER');
 });
+
+
+test('answer lifecycle carries one correlation identity from receipt to answer', async () => {
+  const result = await orchestrateMessage({ message:{ conversationId:'C5', from:'U5', providerMessageId:'WA-5', correlationId:'WA-5', text:'syarat paspor' }, knowledge, evidenceByKnowledgeId:evidence, now:'2026-08-29T00:00:00Z' });
+  assert.equal(result.status, 'ANSWER');
+  assert.ok(result.lifecycle.length >= 3);
+  assert.ok(result.lifecycle.every((event) => event.correlation_id === 'WA-5'));
+  assert.equal(result.lifecycle[0].event_type, 'MESSAGE_RECEIVED');
+  assert.equal(result.lifecycle.at(-1).event_type, 'ANSWER_SERVED');
+});

@@ -135,6 +135,7 @@ CREATE TABLE audit_events (
   before_json jsonb,
   after_json jsonb,
   reason text,
+  correlation_id text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
@@ -143,3 +144,4 @@ CREATE INDEX idx_knowledge_intent_status ON knowledge_items(intent_id, status);
 CREATE INDEX idx_documents_access_status ON documents(access_classification, status);
 CREATE INDEX idx_documents_checksum ON documents(checksum_sha256);
 CREATE INDEX idx_audit_subject ON audit_events(subject_type, subject_id, created_at);
+CREATE INDEX idx_audit_correlation ON audit_events(correlation_id, created_at);

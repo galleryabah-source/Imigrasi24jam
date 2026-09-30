@@ -23,6 +23,13 @@ test('postgres inbox idempotency and outbox lease integration', { skip: !url }, 
     await client.query('COMMIT');
     assert.equal(claim.rowCount, 1);
 
+    await client.query('CREATE TEMP TABLE audit_it (id serial PRIMARY KEY, correlation_id text NOT NULL, event_type text NOT NULL)');
+    await client.query('BEGIN');
+    await client.query(`INSERT INTO audit_it(correlation_id,event_type) VALUES ($1,$2)`, ['M1','MESSAGE_RECEIVED']);
+    await client.query('ROLLBACK');
+    const rolledBackAudit = await client.query(`SELECT count(*)::int AS count FROM audit_it WHERE correlation_id='M1'`);
+    assert.equal(rolledBackAudit.rows[0].count, 0);
+
     const wrongOwner = await client.query(`UPDATE outbox_it SET delivery_state='SENT' WHERE id=$1 AND delivery_state='PROCESSING' AND lease_owner=$2`, [claim.rows[0].id, 'W2']);
     assert.equal(wrongOwner.rowCount, 0);
   } finally {
