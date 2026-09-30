@@ -2,7 +2,7 @@ name: Imigrasi24jam Core
 
 on:
   push:
-    branches: [main, 'phase0-*', 'process-*']
+    branches: [main, 'phase0-*', 'process-*', 'production-*']
   pull_request:
 
 jobs:
