@@ -2,7 +2,7 @@ name: Imigrasi24jam PostgreSQL Foundation
 
 on:
   push:
-    branches: [phase0-runtime-foundation-2026-08-27]
+    branches: [phase0-runtime-foundation-2026-08-27, 'production-*']
   pull_request:
   workflow_dispatch:
 
