@@ -47,3 +47,5 @@ jobs:
         env:
           DATABASE_URL: postgresql://imigrasi:imigrasi@localhost:5432/imigrasi24jam_test
         run: npm run test:db
+      - name: Docker image build
+        run: docker build --tag imigrasi24jam:ci .
