@@ -57,7 +57,7 @@ export function createRuntimeServer({
           "      AND table_name = 'audit_events'",
           "      AND column_name = 'correlation_id'",
           '  ) AS audit_correlation_id'
-        ].join('\\n'));
+        ].join('\n'));
         const contract = schema.rows[0];
         const schemaReady = Object.values(contract).every(Boolean);
         if (!schemaReady) {
