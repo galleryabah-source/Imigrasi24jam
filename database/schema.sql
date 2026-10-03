@@ -145,3 +145,31 @@ CREATE INDEX idx_documents_access_status ON documents(access_classification, sta
 CREATE INDEX idx_documents_checksum ON documents(checksum_sha256);
 CREATE INDEX idx_audit_subject ON audit_events(subject_type, subject_id, created_at);
 CREATE INDEX idx_audit_correlation ON audit_events(correlation_id, created_at);
+
+CREATE TABLE conversations (
+  conversation_id text PRIMARY KEY,
+  user_id text,
+  state text NOT NULL CHECK (state IN ('NEW','CLARIFICATION','RETRIEVAL','ANSWERING','ESCALATION','CLOSED')),
+  scope text,
+  intent text,
+  sub_intent text,
+  pending_question text,
+  turn_count integer NOT NULL DEFAULT 0 CHECK (turn_count >= 0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE conversation_events (
+  id uuid PRIMARY KEY,
+  conversation_id text NOT NULL REFERENCES conversations(conversation_id) ON DELETE CASCADE,
+  event_type text NOT NULL,
+  from_state text,
+  to_state text NOT NULL,
+  payload_json jsonb NOT NULL DEFAULT '{}'::jsonb,
+  correlation_id text,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_conversations_state_updated ON conversations(state, updated_at);
+CREATE INDEX idx_conversation_events_conversation ON conversation_events(conversation_id, created_at);
+CREATE INDEX idx_conversation_events_correlation ON conversation_events(correlation_id, created_at);
