@@ -72,7 +72,11 @@ export function createRuntimeServer({
           service: 'imigrasi24jam',
           checks: { database: 'ok', schema: 'ok' }
         });
-      } catch {
+      } catch (error) {
+        console.error(JSON.stringify({
+          event: 'runtime_readiness_failed',
+          error: String(error?.message ?? error)
+        }));
         return json(res, 503, {
           status: 'not_ready',
           service: 'imigrasi24jam',
