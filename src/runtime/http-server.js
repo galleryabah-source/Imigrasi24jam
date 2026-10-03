@@ -43,10 +43,34 @@ export function createRuntimeServer({
       try {
         db ??= createPostgresAdapter({ connectionString: databaseUrl });
         await db.query('SELECT 1');
+        const schema = await db.query([
+          'SELECT',
+          "  to_regclass('public.message_inbox') IS NOT NULL AS message_inbox,",
+          "  to_regclass('public.message_outbox') IS NOT NULL AS message_outbox,",
+          "  to_regclass('public.audit_events') IS NOT NULL AS audit_events,",
+          "  to_regclass('public.conversations') IS NOT NULL AS conversations,",
+          "  to_regclass('public.conversation_events') IS NOT NULL AS conversation_events,",
+          '  EXISTS (',
+          '    SELECT 1',
+          '    FROM information_schema.columns',
+          "    WHERE table_schema = 'public'",
+          "      AND table_name = 'audit_events'",
+          "      AND column_name = 'correlation_id'",
+          '  ) AS audit_correlation_id'
+        ].join('\\n'));
+        const contract = schema.rows[0];
+        const schemaReady = Object.values(contract).every(Boolean);
+        if (!schemaReady) {
+          return json(res, 503, {
+            status: 'not_ready',
+            service: 'imigrasi24jam',
+            checks: { database: 'ok', schema: 'incomplete', contract }
+          });
+        }
         return json(res, 200, {
           status: 'ready',
           service: 'imigrasi24jam',
-          checks: { database: 'ok' }
+          checks: { database: 'ok', schema: 'ok' }
         });
       } catch {
         return json(res, 503, {
