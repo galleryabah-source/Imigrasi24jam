@@ -22,6 +22,12 @@ function makeDb({ duplicate = false, auditFailure = false } = {}) {
                   processing_status:'PROCESSING'
                 }] };
             }
+            if (/INSERT INTO conversations/.test(sql)) {
+              return { rows: [{ conversation_id:params[0], state:params[2], intent:params[4], turn_count:params[7] }] };
+            }
+            if (/INSERT INTO conversation_events/.test(sql)) {
+              return { rows: [{ id:'CE1' }] };
+            }
             if (/INSERT INTO message_outbox/.test(sql)) {
               return { rows: [{
                 id:'00000000-0000-0000-0000-000000000002',
