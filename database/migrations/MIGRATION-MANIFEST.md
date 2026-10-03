@@ -3,7 +3,7 @@
 | Version | File | Type | Destructive | Status |
 |---|---|---|---|---|
 | 0001 | `0001_initial.sql` | additive foundation | No | TEST-ONLY / REVIEW |
-| 0002–0005 | existing additive migrations | relationships/evidence/messaging/lease | No | TEST-ONLY / REVIEW |
+| 0002–0005 | existing additive migrations | relationships/evidence/messaging/lease | No | TEST-ONLY / REVIEW |\n| 0006 | `0006_hardening_four_gates.sql` | correlation + durable conversation/events | No | TEST-ONLY / REVIEW |
 
 ## Required verification before production
 
