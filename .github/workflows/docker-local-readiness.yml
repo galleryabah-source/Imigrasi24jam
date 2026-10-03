@@ -1,0 +1,72 @@
+name: Imigrasi24jam Docker Local Readiness
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: imigrasi24-docker-readiness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker-local-readiness:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docker versions
+        run: |
+          docker version
+          docker compose version
+
+      - name: Build local image
+        run: docker compose -f docker-compose.local.yml build
+
+      - name: Start disposable PostgreSQL
+        run: docker compose -f docker-compose.local.yml up -d db
+
+      - name: Apply migrations 0001-0006
+        run: |
+          docker compose -f docker-compose.local.yml run --rm migrate
+          docker compose -f docker-compose.local.yml run --rm migrate sh -lc '
+            for migration in 0001_initial.sql 0002_regulatory_relationships.sql 0003_evidence_citations.sql 0004_inbox_outbox.sql 0005_outbox_leases.sql 0006_hardening_four_gates.sql; do
+              test -f "/app/database/migrations/$migration"
+              echo "MIGRATION_PRESENT:$migration"
+            done
+          '
+
+      - name: Start application
+        run: docker compose -f docker-compose.local.yml up -d app
+
+      - name: Verify health and readiness
+        run: |
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:8080/healthz > healthz.json; then
+              break
+            fi
+            sleep 2
+          done
+          cat healthz.json
+          test "$(node -e "const x=require('./healthz.json'); console.log(x.status)")" = "ok"
+
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error http://127.0.0.1:8080/readyz > readyz.json; then
+              break
+            fi
+            sleep 2
+          done
+          cat readyz.json
+          node -e "const x=require('./readyz.json'); if(x.status!=='ready'||x.checks?.database!=='ok'||x.checks?.schema!=='ok') process.exit(1)"
+
+      - name: Show migration and service evidence
+        if: always()
+        run: |
+          docker compose -f docker-compose.local.yml ps
+          docker compose -f docker-compose.local.yml logs --no-color migrate
+          docker compose -f docker-compose.local.yml logs --no-color app
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.local.yml down -v
