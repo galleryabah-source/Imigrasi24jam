@@ -6,6 +6,7 @@ function adapterReturning(result) {
   return createWhatsAppDeliveryAdapter({
     async sendText() { return result; },
     async sendAttachment() { return result; },
+    async verifyWebhook() { return true; },
     async parseDeliveryStatus() { return { status:'DELIVERED' }; }
   });
 }
