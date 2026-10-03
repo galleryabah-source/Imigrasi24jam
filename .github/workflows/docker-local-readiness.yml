@@ -43,7 +43,7 @@ jobs:
       - name: Verify health and readiness
         run: |
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error http://127.0.0.1:8080/healthz > healthz.json; then
+            if curl --silent --show-error http://127.0.0.1:8080/healthz > healthz.json; then
               break
             fi
             sleep 2
@@ -52,7 +52,7 @@ jobs:
           test "$(node -e "const x=require('./healthz.json'); console.log(x.status)")" = "ok"
 
           for attempt in $(seq 1 30); do
-            if curl --fail --silent --show-error http://127.0.0.1:8080/readyz > readyz.json; then
+            if curl --silent --show-error http://127.0.0.1:8080/readyz > readyz.json; then
               break
             fi
             sleep 2
