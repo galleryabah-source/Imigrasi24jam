@@ -7,6 +7,7 @@ function adapterReturning(result) {
     async sendText() { return result; },
     async sendAttachment() { return result; },
     async verifyWebhook() { return true; },
+    async parseInbound() { return {}; },
     async parseDeliveryStatus() { return { status:'DELIVERED' }; }
   });
 }
