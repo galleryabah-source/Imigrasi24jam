@@ -23,6 +23,12 @@ function fakeDb({ duplicate = false } = {}) {
                 }]
               };
             }
+            if (sql.includes('INSERT INTO conversations')) {
+              return { rows:[{ conversation_id:params[0], state:params[2], intent:params[4], turn_count:params[7] }] };
+            }
+            if (sql.includes('INSERT INTO conversation_events')) {
+              return { rows:[{ id:'CE1' }] };
+            }
             if (sql.includes('INSERT INTO message_outbox')) {
               return { rows:[{
                 id:'00000000-0000-0000-0000-000000000002',
