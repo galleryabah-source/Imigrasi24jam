@@ -1,0 +1,66 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-imigrasi24jam}
+      POSTGRES_USER: ${POSTGRES_USER:-imigrasi24jam}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - imigrasi24jam_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-imigrasi24jam} -d ${POSTGRES_DB:-imigrasi24jam}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: imigrasi24jam:local
+    profiles: ["migration"]
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-imigrasi24jam}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-imigrasi24jam}
+      DATABASE_SSL: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["node", "scripts/migrate-test-db.js"]
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: imigrasi24jam:local
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://${POSTGRES_USER:-imigrasi24jam}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-imigrasi24jam}
+      DATABASE_SSL: "false"
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/readyz').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 6
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles: ["tunnel"]
+    depends_on:
+      app:
+        condition: service_healthy
+    command: ["tunnel", "--no-autoupdate", "run", "--token", "${CLOUDFLARE_TUNNEL_TOKEN:?CLOUDFLARE_TUNNEL_TOKEN is required}"]
+
+volumes:
+  imigrasi24jam_pg:
