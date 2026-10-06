@@ -1,0 +1,56 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: imigrasi24jam
+      POSTGRES_USER: imigrasi24jam
+      POSTGRES_PASSWORD: local-only
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
+    volumes:
+      - imigrasi24jam_local_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imigrasi24jam -d imigrasi24jam"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: imigrasi24jam:local
+    environment:
+      DATABASE_URL: postgresql://imigrasi24jam:local-only@db:5432/imigrasi24jam
+      DATABASE_SSL: "false"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["node", "scripts/migrate-test-db.js"]
+    restart: "no"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: imigrasi24jam:local
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      HOST: 0.0.0.0
+      DATABASE_URL: postgresql://imigrasi24jam:local-only@db:5432/imigrasi24jam
+      DATABASE_SSL: "false"
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/readyz').then(async r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 5s
+      start_period: 5s
+      retries: 20
+
+volumes:
+  imigrasi24jam_local_pg:

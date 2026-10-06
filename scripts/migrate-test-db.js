@@ -10,7 +10,8 @@ const migrations = [
   '0002_regulatory_relationships.sql',
   '0003_evidence_citations.sql',
   '0004_inbox_outbox.sql',
-  '0005_outbox_leases.sql'
+  '0005_outbox_leases.sql',
+  '0006_hardening_four_gates.sql'
 ];
 
 const client = new Client({ connectionString: url });
